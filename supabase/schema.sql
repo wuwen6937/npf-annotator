@@ -344,3 +344,6 @@ end $$;
 -- ================================================================ article metadata (2026-11-03)
 -- every extra column of an imported sheet (domain, author, publication date, …) is kept here
 alter table public.articles add column if not exists meta jsonb not null default '{}'::jsonb;
+
+-- ================================================================ due dates (2026-11-03)
+alter table public.articles add column if not exists due date;

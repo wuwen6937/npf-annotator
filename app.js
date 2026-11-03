@@ -417,7 +417,9 @@ function consensusRow(a, cs) {
 function render() { renderTop(); renderView(); }
 function renderTop() {
   const nf = openFeedback();
-  const tabs = isLead() ? [['code','Code'], ...(S.mode === 'shared' ? [['progress','Progress' + (nf ? ` <span class="badge">${nf}</span>` : '')]] : []), ['compare','Compare'],['reliability','Reliability'],['analyse','Analyse']] : [];
+  const todoN = myWork().todo.length;
+  const mine = ['inbox', 'My work' + (todoN ? ` <span class="badge soft">${todoN}</span>` : '')];
+  const tabs = isLead() ? [mine, ['code','Code'], ...(S.mode === 'shared' ? [['progress','Progress' + (nf ? ` <span class="badge">${nf}</span>` : '')]] : []), ['compare','Compare'],['reliability','Reliability'],['analyse','Analyse']] : [mine, ['code','Code']];
   const q = !isLead() ? myQueue() : [], qd = q.filter(a => myStatus(a.key) === 'done').length;
   const sy = S.sync;
   $('#top').innerHTML = `
@@ -440,7 +442,8 @@ function setSync(s, msg) {
 }
 function renderView() {
   const v = $('#view'); hidePop();
-  if (!isLead() && S.view !== 'code') S.view = 'code';
+  if (!isLead() && !['code','inbox'].includes(S.view)) S.view = 'inbox';
+  if (S.view === 'inbox') return viewInbox(v);
   if (S.view === 'progress' && S.mode !== 'shared') S.view = 'code';
   if (S.view === 'code') return viewCode(v);
   if (S.view === 'progress') return viewProgress(v);
@@ -470,7 +473,7 @@ function artItem(a) {
   return `<button class="art ${S.cur === a.key ? 'on' : ''}" data-act="open" data-key="${esc(a.key)}" title="${st === 'done' ? 'Submitted' : st === 'draft' ? 'In progress' : 'Not started'}">
     <span class="st ${st}"></span><span class="art-id">${esc(a.id)}</span>
     <span style="display:flex;gap:4px"><span class="tag">${a.dataset === '1' ? 'CN' : a.dataset === '2' ? 'EN' : '?'}</span>${a.practice || !isLead() ? '' : `<span class="tag" title="Coders who submitted">${n}${as ? '/' + as.length : ''}</span>`}</span>
-    <span class="art-t">${esc(a.title || String(a.text || '').slice(0, 80))}</span></button>`;
+    <span class="art-t">${a.practice ? '' : duePill(a, st === 'done') + ' '}${esc(a.title || String(a.text || '').slice(0, 80))}</span></button>`;
 }
 function renderList() {
   const el = $('#list'); if (!el) return;
@@ -496,7 +499,7 @@ function renderReader() {
   el.innerHTML = `<div class="rd">
     <div class="rd-meta"><span class="tag">${esc(a.id)}</span><span>${a.dataset === '1' ? 'Chinese' : 'English'}</span>${a.ebene ? `<span>· Ebene ${esc(a.ebene)}</span>` : ''}${metaLine(a)}${a.url ? `<a href="${esc(a.url)}" target="_blank" rel="noopener">Open source ↗</a>` : ''}${a.practice ? '<span class="pill na">Practice, not part of the corpus</span>' : ''}</div>
     <h1 lang="${a.dataset === '1' ? 'zh' : 'en'}">${esc(a.title || a.id)}</h1>
-    ${lk ? `<div class="banner good"><span>✓ Submitted ${esc(fmtDate(c.submittedAt))}.${others && isLead() ? ' ' + others + ' other coding' + (others > 1 ? 's' : '') + ' available.' : ' Thank you!'}</span><span style="margin-left:auto;display:flex;gap:8px">${nextKey() ? `<button class="btn sm pri" data-act="next">Next article →</button>` : ''}${others && isLead() ? `<button class="btn sm${nextKey() ? '' : ' pri'}" data-act="gocmp" data-key="${esc(a.key)}">Compare</button>` : ''}<button class="btn sm" data-act="reopen">Edit again</button></span></div>` : ''}
+    ${lk ? `<div class="banner good"><span>✓ Submitted ${esc(fmtDate(c.submittedAt))}.${others && isLead() ? ' ' + others + ' other coding' + (others > 1 ? 's' : '') + ' available.' : ' Thank you!'}</span><span style="margin-left:auto;display:flex;gap:8px">${nextKey() ? `<button class="btn sm pri" data-act="next">Next article →</button>` : ''}${others && isLead() ? `<button class="btn sm${nextKey() ? '' : ' pri'}" data-act="gocmp" data-key="${esc(a.key)}">Compare</button>` : ''}${a.practice ? '' : '<button class="btn sm" data-act="view" data-v="inbox">My work</button>'}<button class="btn sm" data-act="reopen">Edit again</button></span></div>` : ''}
     ${preTop(c, lk)}
     ${!S.hintOff && !lk && preDone(c) && !screenedOut(c) ? `<div class="hint"><span><b>${matchMedia('(pointer: coarse)').matches ? 'Press and hold a word, drag to cover the passage, then pick a category.' : 'Select words in the text to code them.'}</b> A menu opens with the codebook categories${matchMedia('(pointer: coarse)').matches ? '' : '; each has a shortcut key'}. Click a highlight to change or delete it. Most Yes/No answers on the right fill themselves from what you mark.</span><button data-act="hintoff" aria-label="Hide tip">✕</button></div>` : ''}
     <div class="rd-bar">
@@ -749,7 +752,7 @@ async function submit() {
   catch (e) { c.status = 'draft'; setSync('error', e && e.message); toast('Could not submit. Check your connection and try again.'); return; }
   const others = Object.keys(subsOf(key)).filter(u => u !== S.uid).length;
   if (screenedOut(c)) toast('Prescreening submitted. This article needs no further coding.'); else toast(others && isLead() ? 'Submitted. You can now compare with ' + others + ' other coding' + (others > 1 ? 's' : '') + '.' : 'Submitted. Thank you!');
-  render();
+  render(); afterSubmitCheer(key);
 }
 function reopen() { const c = draft(S.cur); c.status = 'draft'; queueSave(S.cur); render(); }
 
@@ -1039,7 +1042,7 @@ function individualSheets() {
 }
 function articlesSheet() {
   const mk = [...new Set(allArticles().flatMap(a => Object.keys(a.meta || {})))];
-  return [['Article ID','Dataset','Ebene','URL','Title','Assigned coders','Submitted codings','Archived', ...mk], ...allArticles().map(a => [a.id, a.dataset, a.ebene || '', a.url || '', a.title || '', (assigned(a) || []).join(','), Object.keys(subsOf(a.key)).length, a.archived ? 1 : 0, ...mk.map(k => (a.meta || {})[k] || '')])];
+  return [['Article ID','Dataset','Ebene','URL','Title','Assigned coders','Due','Submitted codings','Archived', ...mk], ...allArticles().map(a => [a.id, a.dataset, a.ebene || '', a.url || '', a.title || '', (assigned(a) || []).join(','), a.due || '', Object.keys(subsOf(a.key)).length, a.archived ? 1 : 0, ...mk.map(k => (a.meta || {})[k] || '')])];
 }
 function consensusSheets() {
   const arts = corpus().filter(a => Object.keys(subsOf(a.key)).length);
@@ -1258,7 +1261,10 @@ document.addEventListener('click', async e => {
   const d = t.dataset, act = d.act;
   switch (act) {
     case 'view': S.view = d.v; render(); break;
-    case 'open': S.cur = d.key; S.undo = []; S.hidden = {}; S.psEdit = false; S.psWasDone = preDone(draft(d.key)); renderList(); renderReader(); renderPanel(); $('#reader').scrollTop = 0; if (isPhone()) setPane('text'); break;
+    case 'work': S.cur = d.key; markSeen(d.key); S.undo = []; S.hidden = {}; S.psEdit = false; S.view = 'code'; render(); $('#reader').scrollTop = 0; if (isPhone()) setPane('text'); break;
+    case 'setdue': openDue(); break;
+    case 'dosetdue': doSetDue(d.clear === '1'); break;
+    case 'open': markSeen(d.key); S.cur = d.key; S.undo = []; S.hidden = {}; S.psEdit = false; S.psWasDone = preDone(draft(d.key)); renderList(); renderReader(); renderPanel(); $('#reader').scrollTop = 0; if (isPhone()) setPane('text'); break;
     case 'next': { const k = nextKey(); if (k) { S.cur = k; S.undo = []; S.hidden = {}; render(); $('#reader').scrollTop = 0; if (isPhone()) setPane('text'); } break; }
     case 'mpane': setPane(d.v); break;
     case 'psedit': S.psEdit = true; renderReader(); setTimeout(() => { const ps = $('#prescreen'); if (ps) ps.scrollIntoView({block:'center', behavior:'smooth'}); }, 30); break;
@@ -1381,10 +1387,130 @@ document.addEventListener('scroll', e => { if (e.target === $('#pop')) return; i
 
 
 /* ================= roles ================= */
-const APP_VERSION = '2026-11-03e';
+const APP_VERSION = '2026-11-03f';
 const isLead = () => S.mode !== 'shared' || S.isAdmin;
 function allArticles() { return Object.values(S.articles).sort((a, b) => (a.order ?? 1e9) - (b.order ?? 1e9) || String(a.id).localeCompare(String(b.id), undefined, {numeric:true})); }
-function myQueue() { return corpus().filter(a => { const as = assigned(a); return !as || as.includes(String(S.coder)); }); }
+function myQueue() { return corpus().filter(a => (assigned(a) || []).includes(String(S.coder))); }
+
+
+/* ================= MY WORK (coder inbox) ================= */
+const todayISO = () => { const d = new Date(); return new Date(d.getTime() - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 10); };
+const daysUntil = iso => Math.round((new Date(iso + 'T12:00:00') - new Date(todayISO() + 'T12:00:00')) / 864e5);
+const fmtDay = iso => new Date(iso + 'T12:00:00').toLocaleDateString(undefined, {weekday:'short', day:'numeric', month:'short'});
+function duePill(a, done) {
+  if (!a.due) return '';
+  if (done) return `<span class="pill na">due ${esc(fmtDay(a.due))}</span>`;
+  const n = daysUntil(a.due);
+  if (n < 0) return `<span class="pill bad">overdue ${-n === 1 ? 'by 1 day' : 'by ' + -n + ' days'}</span>`;
+  if (n === 0) return '<span class="pill warn">due today</span>';
+  if (n === 1) return '<span class="pill warn">due tomorrow</span>';
+  if (n <= 3) return `<span class="pill warn">due in ${n} days</span>`;
+  return `<span class="pill na">due ${esc(fmtDay(a.due))}</span>`;
+}
+const seenKey = () => 'npf:seen:' + S.uid;
+const wasSeen = key => (LS.get(seenKey(), {}) || {})[key];
+function markSeen(key) { const m = LS.get(seenKey(), {}) || {}; if (!m[key]) { m[key] = now(); LS.set(seenKey(), m); } }
+const byDue = (a, b) => (a.due || '9999') < (b.due || '9999') ? -1 : (a.due || '9999') > (b.due || '9999') ? 1 : (a.order ?? 0) - (b.order ?? 0);
+function myWork() {
+  const q = myQueue();
+  const todo = q.filter(a => myStatus(a.key) !== 'done').sort(byDue);
+  const done = q.filter(a => myStatus(a.key) === 'done').sort((a, b) => String((mySub(b.key) || {}).submittedAt || '').localeCompare(String((mySub(a.key) || {}).submittedAt || '')));
+  return {q, todo, done};
+}
+function cheer(p, left) {
+  if (p >= 1) return 'All done. Thank you for your careful work!';
+  if (p === 0) return 'Ready when you are. Start with the first article below.';
+  if (p < .5) return 'Good start. Keep going!';
+  if (left === 1) return 'Only one article left!';
+  return 'More than halfway there!';
+}
+function ringSVG(p) {
+  const r = 46, c = 2 * Math.PI * r;
+  return `<svg viewBox="0 0 110 110" class="ring" aria-hidden="true"><circle cx="55" cy="55" r="${r}" class="ring-bg"/><circle cx="55" cy="55" r="${r}" class="ring-fg" stroke-dasharray="${c}" stroke-dashoffset="${c * (1 - p)}" transform="rotate(-90 55 55)"/></svg>`;
+}
+function viewInbox(v) {
+  const W = myWork(); const n = W.q.length, d = W.done.length, p = n ? d / n : 0;
+  const subs = W.done.map(a => mySub(a.key)).filter(Boolean);
+  const marks = subs.reduce((t, s) => t + (screenedOut(s) ? 0 : (s.anns || []).length), 0);
+  const outN = subs.filter(screenedOut).length;
+  const week = subs.filter(s => s.submittedAt && Date.now() - new Date(s.submittedAt) < 7 * 864e5).length;
+  const overdue = W.todo.filter(a => a.due && daysUntil(a.due) < 0).length;
+  const nextDue = W.todo.find(a => a.due && daysUntil(a.due) >= 0);
+  const card = (a, isDone) => {
+    const st = myStatus(a.key), c = draft(a.key, false), s = mySub(a.key);
+    const isNew = !isDone && st === 'none' && !wasSeen(a.key);
+    const status = isDone ? (screenedOut(s) ? '<span class="pill na">screened out</span>' : `<span class="pill good">coded · ${(s.anns || []).length} mark${(s.anns || []).length === 1 ? '' : 's'}</span>`)
+      : isNew ? '<span class="pill new">new</span>' : st === 'draft' ? `<span class="pill warn">in progress · ${(c.anns || []).length} mark${(c.anns || []).length === 1 ? '' : 's'}</span>` : '<span class="pill na">not started</span>';
+    const when = isDone ? `submitted ${esc(ago(s.submittedAt))}${s.revisions ? ' · changed ' + s.revisions + '×' : ''}` : st === 'draft' && c.updatedAt ? 'last edited ' + esc(ago(c.updatedAt)) : '';
+    return `<article class="wk ${isNew ? 'is-new' : ''} ${isDone ? 'is-done' : ''}">
+      <div class="wk-m"><span class="tag">${esc(a.id)}</span><span class="tag">${a.dataset === '1' ? 'CN' : 'EN'}</span>${status}${duePill(a, isDone)}</div>
+      <h3 lang="${a.dataset === '1' ? 'zh' : 'en'}">${esc(a.title || String(a.text || '').slice(0, 80))}</h3>
+      <div class="wk-f"><span class="small" style="margin:0">${metaLine(a).replace(/^<span>· /, '<span>')}${when ? (metaLine(a) ? ' · ' : '') + when : ''}</span>
+        <button class="btn sm ${isDone ? '' : 'pri'}" data-act="work" data-key="${esc(a.key)}">${isDone ? 'Review' : st === 'draft' ? 'Continue' : 'Start'}</button></div>
+    </article>`;
+  };
+  const name = S.coder ? coderIni(S.coder) : '';
+  v.innerHTML = `<div class="wide"><div class="wrap" style="max-width:920px">
+    <section class="hero-w">
+      <div class="ring-wrap">${ringSVG(p)}<div class="ring-t"><b>${d}</b><span>of ${n}</span></div></div>
+      <div style="min-width:0">
+        <h2>${name ? 'Hello, ' + esc(name) : 'My work'}</h2>
+        <p class="cheer">${n ? esc(cheer(p, n - d)) : 'Nothing assigned to you yet.'}</p>
+        <p class="small" style="margin:4px 0 0">${n ? `${W.todo.length} to do${overdue ? ` · <b style="color:var(--bad)">${overdue} overdue</b>` : ''}${nextDue ? ` · next due ${esc(fmtDay(nextDue.due))}` : ''}` : 'The project lead assigns articles to you. They will appear here, with their due dates.'}</p>
+      </div>
+      ${d ? `<div class="wk-stats"><div><b>${marks.toLocaleString()}</b><span>passages marked</span></div><div><b>${week}</b><span>done this week</span></div>${outN ? `<div><b>${outN}</b><span>screened out</span></div>` : ''}</div>` : ''}
+    </section>
+    ${p >= 1 && n ? `<div class="banner good" style="font-size:14px"><span><b>✓</b> You have finished every article assigned to you. You can still review and change your codings below.</span></div>` : ''}
+    <section><div class="sec-t"><h3>To do</h3><span class="tag">${W.todo.length}</span></div>
+      ${W.todo.length ? `<div class="wk-list">${W.todo.map(a => card(a, false)).join('')}</div>` : `<div class="card empty" style="padding:18px">${n ? '<b>Nothing left to do</b>Well done.' : '<b>No articles yet</b>Meanwhile, try the practice texts below.'}</div>`}</section>
+    ${W.done.length ? `<section><div class="sec-t"><h3>Done</h3><span class="tag">${W.done.length}</span><span class="small" style="margin:0 0 0 auto">Open one to review it. Choose “Edit again” there to change it.</span></div><div class="wk-list">${W.done.map(a => card(a, true)).join('')}</div></section>` : ''}
+    <section><div class="sec-t"><h3>Practice</h3></div><div class="wk-list">${PRACTICE.map(a => `<article class="wk"><div class="wk-m"><span class="tag">${a.dataset === '1' ? 'CN' : 'EN'}</span>${myStatus(a.key) === 'done' ? '<span class="pill good">done</span>' : ''}</div><h3 lang="${a.dataset === '1' ? 'zh' : 'en'}">${esc(a.title)}</h3><div class="wk-f"><span class="small" style="margin:0">Not part of the study. Try the tool here.</span><button class="btn sm" data-act="work" data-key="${a.key}">Open</button></div></article>`).join('')}</div></section>
+  </div></div>`;
+}
+function celebrate() {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const cv = document.createElement('canvas'); cv.className = 'confetti'; cv.width = innerWidth * devicePixelRatio; cv.height = innerHeight * devicePixelRatio; document.body.appendChild(cv);
+  const g = cv.getContext('2d'); g.scale(devicePixelRatio, devicePixelRatio);
+  const cols = ['#1e6b63', '#16a34a', '#ca8a04', '#0284c7', '#db2777', '#7c3aed'];
+  const ps = Array.from({length:120}, () => ({x:innerWidth / 2 + (Math.random() - .5) * 120, y:innerHeight * .35, vx:(Math.random() - .5) * 9, vy:-Math.random() * 9 - 3, s:4 + Math.random() * 5, c:cols[Math.floor(Math.random() * cols.length)], r:Math.random() * 6}));
+  const t0 = performance.now();
+  (function tick(t) { const el = t - t0; g.clearRect(0, 0, innerWidth, innerHeight);
+    ps.forEach(q => { q.vy += .25; q.x += q.vx; q.y += q.vy; q.r += .1; g.save(); g.translate(q.x, q.y); g.rotate(q.r); g.globalAlpha = Math.max(0, 1 - el / 1800); g.fillStyle = q.c; g.fillRect(-q.s / 2, -q.s / 4, q.s, q.s / 2); g.restore(); });
+    if (el < 1800) requestAnimationFrame(tick); else cv.remove(); })(t0);
+}
+function afterSubmitCheer(key) {
+  if (isPractice(key)) return;
+  const W = myWork(); const n = W.q.length, d = W.done.length;
+  if (!n) return;
+  if (d >= n) { celebrate(); toast('That was your last article. Everything is done, thank you!', 5000); }
+  else if (d === Math.ceil(n / 2)) { toast(`Halfway there: ${d} of ${n} done.`, 4000); }
+  else toast(`Done: ${d} of ${n}. ${n - d} to go.`, 3500);
+}
+
+/* ---------- due dates (lead) ---------- */
+function parseIdList(txt) {
+  const want = new Set(), ranges = [];
+  String(txt || '').split(/[,;\s]+/).filter(Boolean).forEach(tok => { const m = tok.match(/^(\d+)\s*[-–]\s*(\d+)$/); if (m) ranges.push([+m[1], +m[2]]); else want.add(tok); });
+  return allArticles().filter(a => want.has(String(a.id)) || (/^\d+$/.test(String(a.id)) && ranges.some(([x, y]) => +a.id >= Math.min(x, y) && +a.id <= Math.max(x, y))));
+}
+function openDue() {
+  modal(`<div class="mh"><div><h2>Set a due date</h2><p class="sub">Coders see it in <b>My work</b>, with a reminder when it gets close.</p></div><button class="x" data-act="close" aria-label="Close">×</button></div>
+    <div class="form">
+      <label>Articles (IDs or ranges, e.g. <i>32-36, 71-75</i>; empty = all unfinished assigned articles)<input id="due-ids" placeholder="32-36, 71-75"></label>
+      <label>Due date<input id="due-date" type="date" min="${todayISO()}" style="width:auto"></label>
+      <p class="small" id="due-hint"></p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn pri" data-act="dosetdue">Set due date</button><button class="btn" data-act="dosetdue" data-clear="1">Remove due date</button></div></div>`);
+}
+async function doSetDue(clear) {
+  const txt = $('#due-ids').value.trim(); const date = clear ? null : $('#due-date').value;
+  if (!clear && !date) { toast('Choose a date.'); return; }
+  const P = progressModel();
+  const arts = txt ? parseIdList(txt) : corpus().filter(a => assigned(a) && !P.need(a).every(c => P.st[c] && P.st[c][a.key] && P.st[c][a.key].status === 'submitted'));
+  if (!arts.length) { toast('No matching articles.'); return; }
+  if (S.mode === 'shared') { const {error} = await sb.from('articles').update({due:date, updated_at:now()}).in('key', arts.map(a => a.key)); if (error) { toast('Could not save: ' + error.message); return; } }
+  arts.forEach(a => a.due = date); if (S.mode !== 'shared') persistLocal();
+  closeModal(); toast((clear ? 'Due date removed for ' : 'Due ' + fmtDay(date) + ' set for ') + arts.length + ' article' + (arts.length === 1 ? '' : 's') + '.'); renderView();
+}
 
 /* ================= lead data ================= */
 async function loadFeedback() { if (S.mode !== 'shared' || !S.isAdmin) return; const {data, error} = await sb.from('feedback').select('*').order('created_at', {ascending:false}).limit(500); if (!error) S.feedback = data; }
@@ -1404,13 +1530,14 @@ function progressModel() {
   (S.progress || []).forEach(r => { const c = byUid[r.user_id] || (S.profiles[r.user_id] || {}).coder; if (!c) return; (st[c] = st[c] || {})[r.article_key] = {status:r.status, marks:r.marks, at:r.updated_at}; });
   Object.entries(S.subs || {}).forEach(([uid, m]) => { const c = byUid[uid] || (S.profiles[uid] || {}).coder; if (!c) return; for (const k in m) { st[c] = st[c] || {}; if (!st[c][k]) st[c][k] = {status:'submitted', marks:(m[k].anns || []).length, at:m[k].submittedAt}; if (screenedOut(m[k])) st[c][k].out = true; } });
   const arts = corpus();
-  const need = a => assigned(a) || coders.map(m => String(m.coder));
+  const need = a => assigned(a) || [];
   const rows = coders.map(m => {
     const mine = arts.filter(a => need(a).includes(String(m.coder))); const s = st[m.coder] || {};
     const done = mine.filter(a => s[a.key] && s[a.key].status === 'submitted').length;
     const prog = mine.filter(a => s[a.key] && s[a.key].status !== 'submitted').length;
     const last = Object.values(s).map(x => x.at).filter(Boolean).sort().pop();
-    return {m, total:mine.length, done, prog, open:mine.length - done - prog, last};
+    const overdue = mine.filter(a => a.due && daysUntil(a.due) < 0 && !(s[a.key] && s[a.key].status === 'submitted')).length;
+    return {m, total:mine.length, done, prog, open:mine.length - done - prog, last, overdue};
   });
   const complete = arts.filter(a => need(a).every(c => st[c] && st[c][a.key] && st[c][a.key].status === 'submitted')).length;
   const expected = arts.reduce((n, a) => n + need(a).length, 0), submitted = rows.reduce((n, r) => n + r.done, 0);
@@ -1433,16 +1560,16 @@ function viewProgress(v) {
       <div class="stat"><b>${P.rows.reduce((n, r) => n + r.prog, 0)}</b><span>codings in progress</span></div>
       <div class="stat"><b style="color:${openFeedback() ? 'var(--warn)' : 'inherit'}">${openFeedback()}</b><span>open feedback messages</span></div>
     </div>
-    <div class="card"><h3>Coders</h3><p class="sub">Counts are for the articles assigned to each coder (all articles if none are assigned).</p>
-      <div class="tw"><table><thead><tr><th>Coder</th><th>Email</th><th class="n">Assigned</th><th class="n">Submitted</th><th class="n">In progress</th><th class="n">Not started</th><th style="min-width:140px">Progress</th><th>Last activity</th></tr></thead><tbody>
+    <div class="card"><h3>Coders</h3><p class="sub">Counts are for the articles assigned to each coder. ${corpus().filter(a => !assigned(a)).length} article(s) have no coders yet and are hidden from coders.</p>
+      <div class="tw"><table><thead><tr><th>Coder</th><th>Email</th><th class="n">Assigned</th><th class="n">Submitted</th><th class="n">In progress</th><th class="n">Not started</th><th class="n">Overdue</th><th style="min-width:140px">Progress</th><th>Last activity</th></tr></thead><tbody>
       ${P.rows.map(r => `<tr><td><b>${esc(coderIni(r.m.coder))}</b> <span class="tag">${esc(r.m.coder)}</span></td><td style="word-break:break-all">${esc(r.m.email || '')}${S.mode === 'shared' && !r.m.user_id ? ' <span class="pill na">not signed in yet</span>' : ''}</td>
-        <td class="n">${r.total}</td><td class="n">${r.done}</td><td class="n">${r.prog}</td><td class="n">${r.open}</td>
-        <td><div class="abar"><i style="width:${r.total ? r.done / r.total * 100 : 0}%;background:var(--good)"></i></div></td><td>${esc(ago(r.last))}</td></tr>`).join('') || '<tr><td colspan="8" style="color:var(--muted)">No coders yet. Add them under Team.</td></tr>'}</tbody></table></div></div>
+        <td class="n">${r.total}</td><td class="n">${r.done}</td><td class="n">${r.prog}</td><td class="n">${r.open}</td><td class="n" style="${r.overdue ? 'color:var(--bad);font-weight:600' : ''}">${r.overdue || ''}</td>
+        <td><div class="abar"><i style="width:${r.total ? r.done / r.total * 100 : 0}%;background:var(--good)"></i></div></td><td>${esc(ago(r.last))}</td></tr>`).join('') || '<tr><td colspan="9" style="color:var(--muted)">No coders yet. Add them under Team.</td></tr>'}</tbody></table></div></div>
     <div class="card"><div class="vh" style="align-items:center"><div><h3>Articles</h3><p class="sub keyrow" style="margin:0"><span><i class="pcd done"></i>submitted</span><span><i class="pcd wip"></i>in progress</span><span><i class="pcd done out"></i>screened out</span><span><i class="pcd reo"></i>reopened</span><span><i class="pcd todo"></i>not started</span><span>blank = not assigned</span></p></div>
-      <div class="tools"><label style="display:flex;gap:6px;align-items:center;font-size:12.5px;color:var(--muted)"><input type="checkbox" data-act="progopen" ${f.onlyOpen ? 'checked' : ''} style="width:auto"> Only unfinished</label><button class="btn sm" data-act="autoassign">Assign coders automatically</button></div></div>
-      <div class="tw" style="max-height:460px;overflow:auto;margin-top:10px"><table><thead><tr><th>Article</th><th>Data</th>${P.coders.map(m => `<th class="n" style="text-align:center">${esc(coderIni(m.coder))}</th>`).join('')}</tr></thead><tbody>
-      ${artRows.slice(0, 400).map(a => `<tr><td><button class="link" data-act="gocode" data-key="${esc(a.key)}">${esc(a.id)}</button> <span style="color:var(--muted);font-size:12px">${esc((a.title || '').slice(0, 50))}</span></td><td>${a.dataset === '1' ? 'CN' : 'EN'}</td>
-        ${P.coders.map(m => `<td style="text-align:center">${P.need(a).includes(String(m.coder)) ? sym(P.st[m.coder] && P.st[m.coder][a.key]) : ''}</td>`).join('')}</tr>`).join('') || `<tr><td colspan="${P.coders.length + 2}" style="color:var(--muted)">${P.arts.length ? 'Every article is fully coded.' : 'No articles yet.'}</td></tr>`}</tbody></table></div></div>
+      <div class="tools"><label style="display:flex;gap:6px;align-items:center;font-size:12.5px;color:var(--muted)"><input type="checkbox" data-act="progopen" ${f.onlyOpen ? 'checked' : ''} style="width:auto"> Only unfinished</label><button class="btn sm" data-act="setdue">Set due date</button><button class="btn sm" data-act="autoassign">Assign coders automatically</button></div></div>
+      <div class="tw" style="max-height:460px;overflow:auto;margin-top:10px"><table><thead><tr><th>Article</th><th>Data</th><th>Due</th>${P.coders.map(m => `<th class="n" style="text-align:center">${esc(coderIni(m.coder))}</th>`).join('')}</tr></thead><tbody>
+      ${artRows.slice(0, 400).map(a => `<tr><td><button class="link" data-act="gocode" data-key="${esc(a.key)}">${esc(a.id)}</button> <span style="color:var(--muted);font-size:12px">${esc((a.title || '').slice(0, 50))}</span></td><td>${a.dataset === '1' ? 'CN' : 'EN'}</td><td style="white-space:nowrap">${a.due ? duePill(a, P.need(a).length && P.need(a).every(c => P.st[c] && P.st[c][a.key] && P.st[c][a.key].status === 'submitted')) : '<span class="small" style="margin:0">–</span>'}</td>
+        ${P.coders.map(m => `<td style="text-align:center">${P.need(a).includes(String(m.coder)) ? sym(P.st[m.coder] && P.st[m.coder][a.key]) : ''}</td>`).join('')}</tr>`).join('') || `<tr><td colspan="${P.coders.length + 3}" style="color:var(--muted)">${P.arts.length ? 'Every article is fully coded.' : 'No articles yet.'}</td></tr>`}</tbody></table></div></div>
     <div class="card"><h3>Feedback and bug reports</h3><p class="sub">Sent by coders with the Feedback button. The app adds where they were and which device they used.</p>
       ${S.mode !== 'shared' ? '<p class="small">Feedback works in the shared project.</p>' : fb.length ? fb.map(x => `<div class="psg"><div class="psg-m"><span class="pill ${x.kind === 'bug' ? 'bad' : x.kind === 'idea' ? 'good' : 'na'}">${x.kind}</span><b style="color:var(--ink)">${esc(x.coder ? coderIni(x.coder) : x.email)}</b><span>${esc(fmtDate(x.created_at))}</span>${x.context && x.context.article ? `<span>· article ${esc(x.context.article)}</span>` : ''}${x.context && x.context.view ? `<span>· ${esc(x.context.view)} view</span>` : ''}${x.context && x.context.device ? `<span>· ${esc(x.context.device)}</span>` : ''}
           <button class="btn sm" style="margin-left:auto" data-act="fbstatus" data-id="${x.id}" data-v="${x.status === 'open' ? 'done' : 'open'}">${x.status === 'open' ? 'Mark as done' : 'Reopen'}</button></div>
@@ -1458,6 +1585,7 @@ function openAutoAssign() {
     <div class="form">
       <div><b style="font-size:13px">Who codes</b><div class="chips" style="margin-top:6px">${coders.map(m => `<label class="chip" style="display:inline-flex;gap:6px;align-items:center"><input type="checkbox" class="aa-c" value="${esc(m.coder)}" checked style="width:auto">${esc(coderIni(m.coder))}</label>`).join('')}</div></div>
       <label>Coders per article<input id="aa-n" type="number" min="1" max="${coders.length}" value="${Math.min(3, coders.length)}" style="width:90px"></label>
+      <label>Due date (optional)<input id="aa-due" type="date" min="${todayISO()}" style="width:auto"></label>
       <p class="small">${un} article${un === 1 ? '' : 's'} without coders will be assigned.</p>
       <div><button class="btn pri" data-act="doautoassign" ${un ? '' : 'disabled'}>Assign</button></div></div>`);
 }
@@ -1476,8 +1604,10 @@ async function doAutoAssign() {
     chosen.forEach(x => { load[x]++; chosen.forEach(y => { if (x !== y) co[x][y]++; }); });
     plan[a.key] = chosen.sort((x, y) => x.localeCompare(y, undefined, {numeric:true})); rot = (rot + 1) % pick.length;
   });
-  if (S.mode === 'shared') { const {error} = await sb.rpc('set_assignments', {assignments:plan}); if (error) { toast('Could not assign: ' + error.message); return; } }
-  Object.entries(plan).forEach(([k, c]) => { S.articles[k].coders = c; }); if (S.mode !== 'shared') persistLocal();
+  const due = ($('#aa-due') || {}).value || null;
+  if (S.mode === 'shared') { const {error} = await sb.rpc('set_assignments', {assignments:plan}); if (error) { toast('Could not assign: ' + error.message); return; }
+    if (due) { const r = await sb.from('articles').update({due}).in('key', Object.keys(plan)); if (r.error) toast('Assigned, but the due date was not saved: ' + r.error.message); } }
+  Object.entries(plan).forEach(([k, c]) => { S.articles[k].coders = c; if (due) S.articles[k].due = due; }); if (S.mode !== 'shared') persistLocal();
   closeModal(); toast('Assigned ' + Object.keys(plan).length + ' articles: ' + pick.map(c => coderIni(c) + ' ' + load[c]).join(', ')); renderView();
 }
 
@@ -1604,9 +1734,9 @@ async function fetchAll(table, cols, order) {
   }
   return out;
 }
-const artFromRow = r => ({key:r.key, id:r.id, dataset:r.dataset, url:r.url || '', title:r.title || '', text:r.body || '', ebene:r.ebene || '', coders:r.coders || [], order:r.sort, archived:!!r.archived, meta:r.meta || {}});
+const artFromRow = r => ({key:r.key, id:r.id, dataset:r.dataset, url:r.url || '', title:r.title || '', text:r.body || '', ebene:r.ebene || '', coders:r.coders || [], order:r.sort, archived:!!r.archived, meta:r.meta || {}, due:r.due || ''});
 const subFromRow = r => ({...(r.data || {}), aid:r.article_key, coder:r.coder, status:'submitted', submittedAt:r.submitted_at, firstSubmittedAt:r.first_submitted_at, revisions:r.revisions || 0, first:r.first_data || null});
-async function loadArticles() { const rows = await fetchAll('articles', 'key,id,dataset,url,title,body,ebene,coders,sort,archived,meta', 'sort'); const m = {}; rows.forEach(r => m[r.key] = artFromRow(r)); S.articles = m; if (S.cur && !art(S.cur)) S.cur = 'practice-en'; }
+async function loadArticles() { const rows = await fetchAll('articles', 'key,id,dataset,url,title,body,ebene,coders,sort,archived,meta,due', 'sort'); const m = {}; rows.forEach(r => m[r.key] = artFromRow(r)); S.articles = m; if (S.cur && !art(S.cur)) S.cur = 'practice-en'; }
 async function loadMembers() {
   const {data, error} = await sb.from('members').select('*'); if (error) throw error;
   S.members = data;
@@ -1697,7 +1827,7 @@ async function enter(session) {
   try { await loadMembers(); await loadArticles(); await Promise.all([loadSubs(), loadFinals(), loadDrafts()]); S.sync = {s:'saved', label:'Connected', msg:'Signed in as ' + S.email}; lastSync = Date.now(); }
   catch (e) { S.sync = {s:'error', label:'Could not load everything', msg:e.message}; }
   if (corpus().length && isPractice(S.cur) && LS.get('npf:practiced', false)) S.cur = (nextKey() || S.cur);
-  if (S.isAdmin) { try { await loadFeedback(); } catch {} } else S.view = 'code';
+  if (S.isAdmin) { try { await loadFeedback(); } catch {} S.view = 'progress'; } else S.view = 'inbox';
   subscribeRealtime(); entering = false; render();
   if (!S.coder) toast(S.isAdmin ? 'Give yourself a coder number under Team.' : 'You have no coder number yet. The project lead sets it under Team.', 5000);
 }
@@ -1751,7 +1881,7 @@ async function boot() {
   if (session) enter(session); else if (S.mode !== 'shared') showSignIn();
 }
 function nextKey() {
-  const items = corpus().filter(a => { const as = assigned(a); return !as || as.includes(String(S.coder)); });
+  const items = (myQueue().length || !isLead() ? myQueue() : corpus()).slice().sort(byDue);
   const i = items.findIndex(a => a.key === S.cur);
   const after = items.slice(i + 1).concat(items.slice(0, Math.max(0, i))).find(a => myStatus(a.key) !== 'done');
   return after ? after.key : null;

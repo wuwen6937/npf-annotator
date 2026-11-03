@@ -312,3 +312,31 @@ img{max-width:100%}
 .ps-line.todo{background:var(--accent-soft)}
 .ps-line.warn{background:var(--warn-soft)}
 .prescreen{margin:22px 0 8px}
+
+/* my work inbox */
+.badge.soft{background:var(--accent)}
+.pill.new{background:var(--accent);color:var(--on-accent)}
+.hero-w{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:22px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:20px 22px}
+.hero-w h2{font:600 24px/1.2 var(--ui);margin:0}
+.cheer{font:17px/1.4 var(--read);margin:6px 0 0}
+.ring-wrap{position:relative;width:104px;height:104px}
+.ring{width:104px;height:104px}
+.ring-bg{fill:none;stroke:var(--sunk);stroke-width:10}
+.ring-fg{fill:none;stroke:var(--good);stroke-width:10;stroke-linecap:round;transition:stroke-dashoffset .8s ease}
+@media (prefers-reduced-motion:reduce){.ring-fg{transition:none}}
+.ring-t{position:absolute;inset:0;display:grid;place-content:center;text-align:center;line-height:1.1}
+.ring-t b{font:600 26px var(--mono)} .ring-t span{font-size:12px;color:var(--muted)}
+.wk-stats{display:flex;gap:18px}
+.wk-stats div{display:grid;text-align:right}
+.wk-stats b{font:600 20px var(--mono)} .wk-stats span{font-size:12px;color:var(--muted)}
+.sec-t{display:flex;align-items:center;gap:8px;margin:6px 0 10px}
+.sec-t h3{margin:0;font-size:15px}
+.wk-list{display:grid;gap:10px}
+.wk{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 14px;display:grid;gap:6px}
+.wk.is-new{border-color:var(--accent);box-shadow:inset 3px 0 0 var(--accent)}
+.wk.is-done{background:var(--bg)}
+.wk h3{margin:0;font:600 16px/1.35 var(--read)}
+.wk-m{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.wk-f{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+.confetti{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:90}
+@media (max-width:700px){.hero-w{grid-template-columns:auto minmax(0,1fr)}.wk-stats{grid-column:1/3;justify-content:space-around}.wk-stats div{text-align:center}}
