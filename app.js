@@ -230,9 +230,16 @@ function auto(c, k) {
   if (k === 'more4') { const n = validChars(c).length; return {v:n > 4 ? 1 : 0, why:n + ' valid character' + (n === 1 ? '' : 's')}; }
   return {v:'', why:''};
 }
+/* prescreening: not relevant, or neither characters nor plot → no further coding */
+const PRE = ['p1','p2','p3'];
+const pv = (c, k) => { const v = c && c.codes ? c.codes[k] : undefined; return v === 0 || v === 1 ? v : ''; };
+const screenedOut = c => !!c && (pv(c, 'p1') === 0 || (pv(c, 'p2') === 0 && pv(c, 'p3') === 0));
+const preDone = c => screenedOut(c) || PRE.every(k => pv(c, k) !== '');
+const outReason = c => pv(c, 'p1') === 0 ? 'the text is not topically relevant' : 'the text has neither characters nor a plot';
 function val(c, k) {
   if (!c) return '';
   const f = FM[k];
+  if (!PRE.includes(k) && screenedOut(c)) return '';
   if (f.dep && val(c, f.dep) !== 1) return '';
   const o = c.codes && c.codes[k];
   if (o !== undefined && o !== null && o !== '') return o;
@@ -240,7 +247,9 @@ function val(c, k) {
 }
 function openItems(c) {
   const out = [];
+  if (screenedOut(c)) return out;
   for (const k of ['p1','p2','p3']) if (val(c, k) === '') out.push({k, label:FM[k].label});
+  if (!preDone(c)) return out;
   if (val(c, 'pt1') === '') out.push({k:'pt1', label:'Plot 1 type'});
   if (val(c, 'pl2') === 1 && val(c, 'pt2') === '') out.push({k:'pt2', label:'Plot 2 type'});
   (c.chars || []).forEach((ch, i) => {
@@ -252,6 +261,7 @@ function openItems(c) {
   return out;
 }
 function progress(c) {
+  if (screenedOut(c)) return 1;
   const total = 4 + (val(c, 'pl2') === 1 ? 1 : 0) + 1 + (c.chars || []).reduce((n, ch) => n + (cv(c, ch, 'valid') === 0 ? 1 : 4), 0);
   return Math.max(0, Math.min(1, 1 - openItems(c).length / total));
 }
@@ -268,10 +278,10 @@ function resultsRow(a, c, coderCol) {
     if (withAction) { r[o] = cv(c, ch, 'action'); o++; }
     if (v === 1) { r[o] = cv(c, ch, 'prc'); r[o + 1] = cv(c, ch, 'level'); r[o + 2] = cv(c, ch, 'role'); }
   };
-  put(0, 12, true); put(1, 18); put(2, 23); put(3, 28);
+  if (!screenedOut(c)) { put(0, 12, true); put(1, 18); put(2, 23); put(3, 28); }
   r[33] = val(c, 'more4'); r[34] = val(c, 'nchars'); r[35] = val(c, 't1'); r[36] = val(c, 'pt1');
   r[37] = val(c, 'pl2'); r[38] = val(c, 't2'); r[39] = val(c, 'pt2'); r[40] = val(c, 'mpol'); r[41] = val(c, 'mideo');
-  r[42] = c.summary || '';
+  r[42] = screenedOut(c) ? '' : (c.summary || '');
   return r;
 }
 
@@ -379,7 +389,9 @@ function consensus(key, basis = 'current') {
     const m = majority(subs.map(x => val(x.c, f.k))); values[f.k] = m.v; src[f.k] = m.src;
   }
   if (values.pl2 !== 1) { values.t2 = ''; values.pt2 = ''; }
-  const groups = alignChars(subs).filter(g => Object.keys(g.members).length > k / 2);
+  const out = screenedOut({codes:values});
+  if (out) F.forEach(f => { if (!PRE.includes(f.k)) { values[f.k] = ''; src[f.k] = 'screened out'; } });
+  const groups = out ? [] : alignChars(subs).filter(g => Object.keys(g.members).length > k / 2);
   const chars = groups.map(g => {
     const mem = Object.values(g.members);
     const valid = majority(mem.map(m => cv(m.c, m.ch, 'valid'))).v;
@@ -389,7 +401,7 @@ function consensus(key, basis = 'current') {
       role:majority(mem.map(m => cv(m.c, m.ch, 'role'))).v,
       action:cv(mem[0].c, mem[0].ch, 'action')};
   }).filter(ch => ch.valid === 1);
-  return {k, values, src, chars, summary:fin.summary || ''};
+  return {k, values, src, chars, summary:out ? '' : (fin.summary || ''), out};
 }
 function consensusRow(a, cs) {
   const r = new Array(43).fill('');
@@ -485,13 +497,25 @@ function renderReader() {
     <div class="rd-meta"><span class="tag">${esc(a.id)}</span><span>${a.dataset === '1' ? 'Chinese' : 'English'}</span>${a.ebene ? `<span>· Ebene ${esc(a.ebene)}</span>` : ''}${a.url ? `<a href="${esc(a.url)}" target="_blank" rel="noopener">Open source ↗</a>` : ''}${a.practice ? '<span class="pill na">Practice, not part of the corpus</span>' : ''}</div>
     <h1 lang="${a.dataset === '1' ? 'zh' : 'en'}">${esc(a.title || a.id)}</h1>
     ${lk ? `<div class="banner good"><span>✓ Submitted ${esc(fmtDate(c.submittedAt))}.${others && isLead() ? ' ' + others + ' other coding' + (others > 1 ? 's' : '') + ' available.' : ' Thank you!'}</span><span style="margin-left:auto;display:flex;gap:8px">${nextKey() ? `<button class="btn sm pri" data-act="next">Next article →</button>` : ''}${others && isLead() ? `<button class="btn sm${nextKey() ? '' : ' pri'}" data-act="gocmp" data-key="${esc(a.key)}">Compare</button>` : ''}<button class="btn sm" data-act="reopen">Edit again</button></span></div>` : ''}
-    ${!S.hintOff && !lk ? `<div class="hint"><span><b>${matchMedia('(pointer: coarse)').matches ? 'Press and hold a word, drag to cover the passage, then pick a category.' : 'Select words in the text to code them.'}</b> A menu opens with the codebook categories${matchMedia('(pointer: coarse)').matches ? '' : '; each has a shortcut key'}. Click a highlight to change or delete it. Most Yes/No answers on the right fill themselves from what you mark.</span><button data-act="hintoff" aria-label="Hide tip">✕</button></div>` : ''}
+    ${preCard(c, lk)}
+    ${!S.hintOff && !lk && preDone(c) && !screenedOut(c) ? `<div class="hint"><span><b>${matchMedia('(pointer: coarse)').matches ? 'Press and hold a word, drag to cover the passage, then pick a category.' : 'Select words in the text to code them.'}</b> A menu opens with the codebook categories${matchMedia('(pointer: coarse)').matches ? '' : '; each has a shortcut key'}. Click a highlight to change or delete it. Most Yes/No answers on the right fill themselves from what you mark.</span><button data-act="hintoff" aria-label="Hide tip">✕</button></div>` : ''}
     <div class="rd-bar">
       <span style="display:flex;align-items:center;gap:6px" title="Technology and positive/negative turns are tagged to this plot">Plot passages go to <span class="mini-seg"><button data-act="plot" data-v="1" class="${S.plot === 1 ? 'on' : ''}">1</button><button data-act="plot" data-v="2" class="${S.plot === 2 ? 'on' : ''}">2</button></span></span>
       <span class="legend">${CATS.filter(x => counts[x.id]).map(x => `<button class="lg ${S.hidden[x.id] ? 'off' : ''}" style="--c:${x.color}" data-act="lg" data-cat="${x.id}" title="Show or hide"><i></i>${x.short}<b>${counts[x.id]}</b></button>`).join('') || '<span>Nothing marked yet</span>'}</span>
     </div>
-    <div id="txt" class="txt" lang="${a.dataset === '1' ? 'zh' : 'en'}">${textHTML(a.text, c.anns.filter(x => !S.hidden[x.cat]), c)}</div>
+    <div id="txt" class="txt ${screenedOut(c) ? 'out' : ''}" lang="${a.dataset === '1' ? 'zh' : 'en'}">${textHTML(a.text, c.anns.filter(x => !S.hidden[x.cat]), c)}</div>
   </div>`;
+}
+function preCard(c, lk) {
+  const done = preDone(c), out = screenedOut(c);
+  const ans = k => pv(c, k) === 1 ? 'yes' : pv(c, k) === 0 ? 'no' : '–';
+  if (done && !out && !S.psEdit) return `<div class="ps-line"><span class="step ok">1</span><span><b>Prescreening done:</b> relevant ${ans('p1')} · characters ${ans('p2')} · plot ${ans('p3')}. <span style="color:var(--muted)">Now mark the text.</span></span>${lk ? '' : '<button class="link" data-act="psedit">Change</button>'}</div>`;
+  return `<section class="prescreen ${out ? 'out' : ''}" id="prescreen" aria-label="Step 1: Prescreening">
+    <div class="ps-h"><span class="step">1</span><div><b>Start with the prescreening</b><p>${out ? '' : 'Read the whole text once, then answer these three questions. Marking the text opens once they are answered.'}</p></div><button class="q" data-act="def" data-def="8" aria-label="About the prescreening">?</button></div>
+    ${PRE.map(k => fieldHTML(c, FM[k], lk)).join('')}
+    ${out ? `<div class="ps-out"><b>No further coding needed:</b> ${outReason(c)}. Your answers are enough for this article.${lk ? '' : ` <span class="ps-act"><button class="btn sm pri" data-act="submit">Submit prescreening</button></span>`}</div>`
+      : done ? `<div class="ps-ok"><b>The text passes.</b> Continue with the full coding: select passages to mark them. <button class="btn sm pri" data-act="psclose">Start marking</button></div>` : ''}
+  </section>`;
 }
 function textHTML(text, anns, c) {
   const pts = new Set([0, text.length]); anns.forEach(a => { pts.add(a.s); pts.add(a.e); });
@@ -554,7 +578,9 @@ function renderPanel() {
   const c = draft(a.key), lk = locked(a.key), st = el.scrollTop;
   const p = progress(c), open = openItems(c);
   const secs = [...new Set(F.map(f => f.sec))];
+  const pre = preDone(c), out = screenedOut(c);
   const body = secs.map(sec => {
+    if (sec !== 'Prescreening' && (out || !pre)) return '';
     const fs = F.filter(f => f.sec === sec);
     let inner = fs.filter(f => !f.fromChars).map(f => fieldHTML(c, f, lk)).join('');
     if (sec === 'Characters') {
@@ -565,17 +591,19 @@ function renderPanel() {
     }
     return `<div class="sec"><div class="sec-h">${esc(sec)}<button class="q" data-act="def" data-def="${SEC_DEF[sec]}" aria-label="Definition">?</button></div>${inner}</div>`;
   }).join('');
+  const gate = out ? `<div class="sec"><div class="ps-out" style="margin:4px 0 0"><b>Screened out:</b> ${outReason(c)}. Nothing else to code for this article.</div></div>`
+    : !pre ? `<div class="sec"><p class="small" style="margin:4px 0 0">The rest of the coding sheet opens after the three prescreening questions.</p></div>` : '';
   el.innerHTML = `<div class="pn-h"><b style="font-size:13px">Coding sheet</b><div class="prog" title="${Math.round(p * 100)}% complete"><i style="width:${p * 100}%"></i></div><span class="tag">${open.length ? open.length + ' open' : 'complete'}</span></div>
-    <div class="pn-b">${body}
-      <div class="sec"><div class="sec-h">Narrative summary<button class="q" data-act="def" data-def="49" aria-label="Definition">?</button></div>
+    <div class="pn-b">${body}${gate}
+      ${out || !pre ? '' : `<div class="sec"><div class="sec-h">Narrative summary<button class="q" data-act="def" data-def="49" aria-label="Definition">?</button></div>
         <textarea id="summary" rows="6" placeholder="Set in [place] and [time], this is a story about how [hero] [action]… The take-away message is [moral]." ${lk ? 'disabled' : ''}>${esc(c.summary)}</textarea>
         ${lk ? '' : `<div style="margin-top:6px"><button class="btn sm" data-act="draftsum">Draft from my marks</button></div>`}</div>
       <div class="sec"><div class="sec-h">Memo</div>
-        <textarea id="memo" rows="3" placeholder="Doubts, borderline decisions, things to discuss. Not exported to Results." ${lk ? 'disabled' : ''}>${esc(c.memo)}</textarea></div>
+        <textarea id="memo" rows="3" placeholder="Doubts, borderline decisions, things to discuss. Not exported to Results." ${lk ? 'disabled' : ''}>${esc(c.memo)}</textarea></div>`}
     </div>
     <div class="pn-f">${lk ? `<button class="btn" data-act="reopen" style="flex:1;justify-content:center">Edit again</button>` : `
       ${open.length ? `<div class="open-list">Still open: ${open.slice(0, 6).map(o => `<button data-act="goto" data-k="${esc(o.k)}">${esc(o.label)}</button>`).join('')}${open.length > 6 ? '…' : ''}</div>` : ''}
-      <button class="btn pri" data-act="submit">${mySub(a.key) ? 'Resubmit coding' : 'Submit coding'}</button>`}</div>`;
+      <button class="btn pri" data-act="submit" ${pre ? '' : 'disabled'}>${out ? 'Submit prescreening' : mySub(a.key) ? 'Resubmit coding' : 'Submit coding'}</button>`}</div>`;
   el.scrollTop = st; renderMtabs();
 }
 
@@ -610,6 +638,9 @@ function checkSel() {
   if (a.dataset !== '1') { const W = /[A-Za-z0-9À-ɏ]/; while (s > 0 && W.test(text[s - 1]) && W.test(text[s])) s--; while (e < text.length && W.test(text[e]) && W.test(text[e - 1])) e++; }
   if (e <= s) return;
   if (locked(S.cur)) { toast('This coding is submitted. Choose “Edit again” to change it.'); return; }
+  { const c0 = draft(S.cur);
+    if (screenedOut(c0)) { toast('This text is screened out, so no marks are needed. Change the prescreening if that was a mistake.', 4500); return; }
+    if (!preDone(c0)) { toast('First answer the three prescreening questions above the text.', 4000); const ps = $('#prescreen'); if (ps) { ps.scrollIntoView({block:'start', behavior:'smooth'}); ps.classList.remove('nudge'); void ps.offsetWidth; ps.classList.add('nudge'); } return; } }
   S.sel = {s, e, t:text.slice(s, e)};
   showTagMenu(r.getBoundingClientRect());
 }
@@ -703,7 +734,7 @@ async function submit() {
   try { setSync('saving'); await writeSub(key, sub); queueSave(key); setSync('saved'); }
   catch (e) { c.status = 'draft'; setSync('error', e && e.message); toast('Could not submit. Check your connection and try again.'); return; }
   const others = Object.keys(subsOf(key)).filter(u => u !== S.uid).length;
-  toast(others && isLead() ? 'Submitted. You can now compare with ' + others + ' other coding' + (others > 1 ? 's' : '') + '.' : 'Submitted. Thank you!');
+  if (screenedOut(c)) toast('Prescreening submitted. This article needs no further coding.'); else toast(others && isLead() ? 'Submitted. You can now compare with ' + others + ' other coding' + (others > 1 ? 's' : '') + '.' : 'Submitted. Thank you!');
   render();
 }
 function reopen() { const c = draft(S.cur); c.status = 'draft'; queueSave(S.cur); render(); }
@@ -1127,9 +1158,11 @@ document.addEventListener('click', async e => {
   const d = t.dataset, act = d.act;
   switch (act) {
     case 'view': S.view = d.v; render(); break;
-    case 'open': S.cur = d.key; S.undo = []; S.hidden = {}; renderList(); renderReader(); renderPanel(); $('#reader').scrollTop = 0; if (isPhone()) setPane('text'); break;
+    case 'open': S.cur = d.key; S.undo = []; S.hidden = {}; S.psEdit = false; S.psWasDone = preDone(draft(d.key)); renderList(); renderReader(); renderPanel(); $('#reader').scrollTop = 0; if (isPhone()) setPane('text'); break;
     case 'next': { const k = nextKey(); if (k) { S.cur = k; S.undo = []; S.hidden = {}; render(); $('#reader').scrollTop = 0; if (isPhone()) setPane('text'); } break; }
     case 'mpane': setPane(d.v); break;
+    case 'psedit': S.psEdit = true; renderReader(); break;
+    case 'psclose': S.psEdit = false; renderReader(); if (isPhone()) setPane('text'); break;
     case 'feedback': openFeedbackForm(); break;
     case 'fbkind': S.fbKind = d.v; $$('[data-act="fbkind"]').forEach(b => b.classList.toggle('on', b.dataset.v === d.v)); break;
     case 'fbsend': sendFeedback(); break;
@@ -1162,7 +1195,7 @@ document.addEventListener('click', async e => {
     case 'back': showTagMenu(S.menu.rect); break;
     case 'delann': { const c = draft(S.cur); pushUndo(); c.anns = c.anns.filter(a => a.id !== d.id); hidePop(); changed(); break; }
     case 'annp': { const c = draft(S.cur); const a = c.anns.find(x => x.id === d.id); if (a) { pushUndo(); a.p = +d.v; changed(); } hidePop(); break; }
-    case 'set': { const c = draft(S.cur); const v = +d.v; const au = auto(c, d.k).v; if (au === v) delete c.codes[d.k]; else c.codes[d.k] = v; changed(true); break; }
+    case 'set': { const c = draft(S.cur); const v = +d.v; const au = auto(c, d.k).v; if (au === v) delete c.codes[d.k]; else c.codes[d.k] = v; if (PRE.includes(d.k)) { const wasDone = S.psWasDone; changed(); if (preDone(c) && !screenedOut(c) && !wasDone) toast('Prescreening done. The text passes: now mark it.'); S.psWasDone = preDone(c); break; } changed(true); break; }
     case 'reset': { const c = draft(S.cur); delete c.codes[d.k]; changed(true); break; }
     case 'flash': if (isPhone()) setPane('text'); { const p = d.p ? +d.p : 0; const c = draft(S.cur); flash(ids => ids.some(id => { const a = c.anns.find(x => x.id === id); return a && a.cat === d.cat && (!p || (a.p || 1) === p); })); break; }
     case 'flashch': if (isPhone()) setPane('text'); { const c = draft(S.cur); flash(ids => ids.some(id => { const a = c.anns.find(x => x.id === id); return a && a.c === d.id; })); break; }
@@ -1244,7 +1277,7 @@ document.addEventListener('scroll', e => { if (e.target === $('#pop')) return; i
 
 
 /* ================= roles ================= */
-const APP_VERSION = '2026-11-03b';
+const APP_VERSION = '2026-11-03c';
 const isLead = () => S.mode !== 'shared' || S.isAdmin;
 function allArticles() { return Object.values(S.articles).sort((a, b) => (a.order ?? 1e9) - (b.order ?? 1e9) || String(a.id).localeCompare(String(b.id), undefined, {numeric:true})); }
 function myQueue() { return corpus().filter(a => { const as = assigned(a); return !as || as.includes(String(S.coder)); }); }
@@ -1265,7 +1298,7 @@ function progressModel() {
   const coders = teamCoders(); const byUid = {}; coders.forEach(m => { if (m.user_id) byUid[m.user_id] = m.coder; });
   const st = {}; // coder -> key -> {status, marks, at}
   (S.progress || []).forEach(r => { const c = byUid[r.user_id] || (S.profiles[r.user_id] || {}).coder; if (!c) return; (st[c] = st[c] || {})[r.article_key] = {status:r.status, marks:r.marks, at:r.updated_at}; });
-  Object.entries(S.subs || {}).forEach(([uid, m]) => { const c = byUid[uid] || (S.profiles[uid] || {}).coder; if (!c) return; for (const k in m) { st[c] = st[c] || {}; if (!st[c][k]) st[c][k] = {status:'submitted', marks:(m[k].anns || []).length, at:m[k].submittedAt}; } });
+  Object.entries(S.subs || {}).forEach(([uid, m]) => { const c = byUid[uid] || (S.profiles[uid] || {}).coder; if (!c) return; for (const k in m) { st[c] = st[c] || {}; if (!st[c][k]) st[c][k] = {status:'submitted', marks:(m[k].anns || []).length, at:m[k].submittedAt}; if (screenedOut(m[k])) st[c][k].out = true; } });
   const arts = corpus();
   const need = a => assigned(a) || coders.map(m => String(m.coder));
   const rows = coders.map(m => {
@@ -1285,7 +1318,7 @@ function viewProgress(v) {
   clearInterval(progTimer);
   if (S.mode === 'shared') { if (!S.progressAt || Date.now() - S.progressAt > 20000) Promise.all([loadProgress(), loadFeedback(), loadBackups()]).then(() => { if (S.view === 'progress') renderView(); }); progTimer = setInterval(() => { if (S.view !== 'progress') return clearInterval(progTimer); loadProgress().then(() => { if (S.view === 'progress' && $('#modal').hidden && !(document.activeElement && /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName))) renderView(); }); }, 60000); }
   const P = progressModel(); const f = S.prog || (S.prog = {onlyOpen:true});
-  const sym = s => !s ? '<i class="pcd todo" title="Not started"></i>' : s.status === 'submitted' ? `<i class="pcd done" title="Submitted ${esc(fmtDate(s.at))}"></i>` : s.status === 'reopened' ? `<i class="pcd reo" title="Reopened after submitting"></i>` : `<i class="pcd wip" title="In progress · ${s.marks} marks · ${esc(ago(s.at))}"></i>`;
+  const sym = s => !s ? '<i class="pcd todo" title="Not started"></i>' : s.status === 'submitted' ? (s.out ? `<i class="pcd done out" title="Submitted as screened out ${esc(fmtDate(s.at))}"></i>` : `<i class="pcd done" title="Submitted ${esc(fmtDate(s.at))}"></i>`) : s.status === 'reopened' ? `<i class="pcd reo" title="Reopened after submitting"></i>` : `<i class="pcd wip" title="In progress · ${s.marks} marks · ${esc(ago(s.at))}"></i>`;
   const artRows = P.arts.filter(a => !f.onlyOpen || !P.need(a).every(c => P.st[c] && P.st[c][a.key] && P.st[c][a.key].status === 'submitted'));
   const fb = S.feedback || [];
   v.innerHTML = `<div class="wide"><div class="wrap">
@@ -1301,7 +1334,7 @@ function viewProgress(v) {
       ${P.rows.map(r => `<tr><td><b>${esc(coderIni(r.m.coder))}</b> <span class="tag">${esc(r.m.coder)}</span></td><td style="word-break:break-all">${esc(r.m.email || '')}${S.mode === 'shared' && !r.m.user_id ? ' <span class="pill na">not signed in yet</span>' : ''}</td>
         <td class="n">${r.total}</td><td class="n">${r.done}</td><td class="n">${r.prog}</td><td class="n">${r.open}</td>
         <td><div class="abar"><i style="width:${r.total ? r.done / r.total * 100 : 0}%;background:var(--good)"></i></div></td><td>${esc(ago(r.last))}</td></tr>`).join('') || '<tr><td colspan="8" style="color:var(--muted)">No coders yet. Add them under Team.</td></tr>'}</tbody></table></div></div>
-    <div class="card"><div class="vh" style="align-items:center"><div><h3>Articles</h3><p class="sub keyrow" style="margin:0"><span><i class="pcd done"></i>submitted</span><span><i class="pcd wip"></i>in progress</span><span><i class="pcd reo"></i>reopened</span><span><i class="pcd todo"></i>not started</span><span>blank = not assigned</span></p></div>
+    <div class="card"><div class="vh" style="align-items:center"><div><h3>Articles</h3><p class="sub keyrow" style="margin:0"><span><i class="pcd done"></i>submitted</span><span><i class="pcd wip"></i>in progress</span><span><i class="pcd done out"></i>screened out</span><span><i class="pcd reo"></i>reopened</span><span><i class="pcd todo"></i>not started</span><span>blank = not assigned</span></p></div>
       <div class="tools"><label style="display:flex;gap:6px;align-items:center;font-size:12.5px;color:var(--muted)"><input type="checkbox" data-act="progopen" ${f.onlyOpen ? 'checked' : ''} style="width:auto"> Only unfinished</label><button class="btn sm" data-act="autoassign">Assign coders automatically</button></div></div>
       <div class="tw" style="max-height:460px;overflow:auto;margin-top:10px"><table><thead><tr><th>Article</th><th>Data</th>${P.coders.map(m => `<th class="n" style="text-align:center">${esc(coderIni(m.coder))}</th>`).join('')}</tr></thead><tbody>
       ${artRows.slice(0, 400).map(a => `<tr><td><button class="link" data-act="gocode" data-key="${esc(a.key)}">${esc(a.id)}</button> <span style="color:var(--muted);font-size:12px">${esc((a.title || '').slice(0, 50))}</span></td><td>${a.dataset === '1' ? 'CN' : 'EN'}</td>

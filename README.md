@@ -11,6 +11,8 @@ It runs in any browser and on phones, and can be added to the home screen like a
 | Coders | Open the link, enter your email, tap the sign-in link (or type the code from the email). They see only the articles assigned to them and only their own codings. **Feedback** sends a message or bug report to the lead. |
 | Project lead | **Progress**: who has coded what, feedback inbox, safety copies, automatic assignment. **Compare / Reliability / Analyse / Export**: lead only. **Team** and **Articles**: manage people and texts. |
 
+**Step 1 is always the prescreening.** Coders answer three questions (topical relevance, characters, plot) above the text before they can mark anything. If the text is not relevant, or has neither characters nor a plot, they submit the prescreening and are done; the remaining columns stay empty in every export.
+
 Coders never see each other's work; only the project lead can compare. The database enforces this, not just the screen. Articles that already have codings cannot be deleted, only archived.
 
 **Safety copies:** the database copies all codings every night (kept 30 days) and makes a full copy including article texts every Sunday (last 6 kept). The lead can download any copy under *Progress*, and should also download a backup file now and then to keep outside Supabase.
