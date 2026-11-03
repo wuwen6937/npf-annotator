@@ -490,6 +490,15 @@ function artItem(a) {
 }
 function renderList() {
   const el = $('#list'); if (!el) return;
+  if (!isLead()) {
+    const W = myWork();
+    el.innerHTML = `${isPractice(S.cur) ? `<div class="grp-l">Practice</div>${artItem(art(S.cur))}` : ''}
+      <div class="grp-l">To do · ${W.todo.length}</div>
+      ${W.todo.map(artItem).join('') || `<p class="small" style="padding:4px 8px">${W.q.length ? 'Nothing left to do. Well done!' : 'No articles assigned to you yet.'}</p>`}
+      ${W.done.length ? `<div class="grp-l">Done · ${W.done.length}</div>${W.done.map(artItem).join('')}` : ''}
+      <p style="padding:10px 8px"><button class="link" data-act="view" data-v="inbox">← Back to My work</button></p>`;
+    return;
+  }
   const items = listItems(); const hasAssign = isLead() && corpus().some(a => assigned(a));
   const pool = isLead() ? corpus() : myQueue();
   const total = pool.length, done = pool.filter(a => myStatus(a.key) === 'done').length;
@@ -1403,7 +1412,7 @@ document.addEventListener('scroll', e => { if (e.target === $('#pop')) return; i
 
 
 /* ================= roles ================= */
-const APP_VERSION = '2026-11-03g';
+const APP_VERSION = '2026-11-03h';
 const isLead = () => S.mode !== 'shared' || S.isAdmin;
 function allArticles() { return Object.values(S.articles).sort((a, b) => (a.order ?? 1e9) - (b.order ?? 1e9) || String(a.id).localeCompare(String(b.id), undefined, {numeric:true})); }
 function myQueue() { return corpus().filter(a => (assigned(a) || []).includes(String(S.coder))); }
@@ -1868,7 +1877,8 @@ async function enter(session) {
   S.sync = {s:'idle', label:'Loading…', msg:''}; render();
   try { await loadMembers(); await loadArticles(); await Promise.all([loadSubs(), loadFinals(), loadDrafts()]); S.sync = {s:'saved', label:'Connected', msg:'Signed in as ' + S.email}; lastSync = Date.now(); }
   catch (e) { S.sync = {s:'error', label:'Could not load everything', msg:e.message}; }
-  if (corpus().length && isPractice(S.cur) && LS.get('npf:practiced', false)) S.cur = (nextKey() || S.cur);
+  if (!S.isAdmin) { const W = myWork(); const first = W.todo[0] || W.done[0]; if (first) S.cur = first.key; }
+  else if (corpus().length && isPractice(S.cur) && LS.get('npf:practiced', false)) S.cur = (nextKey() || S.cur);
   if (S.isAdmin) { try { await loadFeedback(); } catch {} S.view = 'progress'; } else S.view = 'inbox';
   subscribeRealtime(); entering = false; render();
   if (!S.coder) toast(S.isAdmin ? 'Give yourself a coder number under Team.' : 'You have no coder number yet. The project lead sets it under Team.', 5000);

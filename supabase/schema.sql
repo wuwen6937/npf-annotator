@@ -347,3 +347,13 @@ alter table public.articles add column if not exists meta jsonb not null default
 
 -- ================================================================ due dates (2026-11-03)
 alter table public.articles add column if not exists due date;
+
+-- ================================================================ coders read only their assigned articles (2026-11-03)
+create or replace function public.my_coder() returns text language sql stable security definer set search_path = public as $$
+  select coder from members where email = current_email()
+$$;
+revoke execute on function public.my_coder() from public, anon;
+grant execute on function public.my_coder() to authenticated;
+drop policy if exists articles_read on public.articles;
+create policy articles_read on public.articles for select to authenticated
+  using ((select is_lead()) or ((select is_member()) and not archived and (select my_coder()) = any(coders)));
