@@ -437,8 +437,21 @@ function renderTop() {
     </div>`;
 }
 function setSync(s, msg) {
-  const labels = {saving:'Saving…', saved:'All changes saved', error:'Not saved: retrying', idle:''};
-  S.sync = {s, label:labels[s] || '', msg:msg || ''}; renderTop();
+  const labels = {saving:'Saving…', saved:'All changes saved', error:'Not saved yet: retrying', offline:'Offline: kept on this device', idle:''};
+  S.sync = {s, label:labels[s] || '', msg:msg || ''}; renderTop(); paintSave();
+}
+function saveText() {
+  if (S.mode !== 'shared') return S.mode === 'local' ? 'Saved on this device' : '';
+  const s = S.sync && S.sync.s;
+  if (s === 'saving') return 'Saving…';
+  if (s === 'offline') return 'Offline · saved on this device, will upload';
+  if (s === 'error') return 'Not saved yet · retrying';
+  if (lastSavedAt) return 'Saved to server ' + lastSavedAt.toLocaleTimeString(undefined, {hour:'2-digit', minute:'2-digit'});
+  return 'Saved to server automatically';
+}
+function paintSave() {
+  const s = S.sync && S.sync.s, cls = s === 'saving' ? 'busy' : (s === 'error' || s === 'offline') ? 'err' : 'ok';
+  $$('.savest').forEach(el => { el.className = 'savest ' + cls; el.textContent = saveText(); });
 }
 function renderView() {
   const v = $('#view'); hidePop();
@@ -503,6 +516,7 @@ function renderReader() {
     ${preTop(c, lk)}
     ${!S.hintOff && !lk && preDone(c) && !screenedOut(c) ? `<div class="hint"><span><b>${matchMedia('(pointer: coarse)').matches ? 'Press and hold a word, drag to cover the passage, then pick a category.' : 'Select words in the text to code them.'}</b> A menu opens with the codebook categories${matchMedia('(pointer: coarse)').matches ? '' : '; each has a shortcut key'}. Click a highlight to change or delete it. Most Yes/No answers on the right fill themselves from what you mark.</span><button data-act="hintoff" aria-label="Hide tip">✕</button></div>` : ''}
     <div class="rd-bar">
+      <span class="savest"></span>
       <span style="display:flex;align-items:center;gap:6px" title="Technology and positive/negative turns are tagged to this plot">Plot passages go to <span class="mini-seg"><button data-act="plot" data-v="1" class="${S.plot === 1 ? 'on' : ''}">1</button><button data-act="plot" data-v="2" class="${S.plot === 2 ? 'on' : ''}">2</button></span></span>
       <span class="legend">${CATS.filter(x => counts[x.id]).map(x => `<button class="lg ${S.hidden[x.id] ? 'off' : ''}" style="--c:${x.color}" data-act="lg" data-cat="${x.id}" title="Show or hide"><i></i>${x.short}<b>${counts[x.id]}</b></button>`).join('') || '<span>Nothing marked yet</span>'}</span>
     </div>
@@ -610,7 +624,8 @@ function renderPanel() {
   }).join('');
   const gate = out ? `<div class="sec"><div class="ps-out" style="margin:4px 0 0"><b>Screened out:</b> ${outReason(c)}. Nothing else to code for this article.</div></div>`
     : !pre ? `<div class="sec"><p class="small" style="margin:4px 0 0">Read the whole text first, then answer the prescreening (here or at the end of the text). The rest of the coding sheet opens after that.</p></div>` : '';
-  el.innerHTML = `<div class="pn-h"><b style="font-size:13px">Coding sheet</b><div class="prog" title="${Math.round(p * 100)}% complete"><i style="width:${p * 100}%"></i></div><span class="tag">${open.length ? open.length + ' open' : 'complete'}</span></div>
+  setTimeout(paintSave, 0);
+  el.innerHTML = `<div class="pn-h"><b style="font-size:13px">Coding sheet</b><span class="savest"></span><div class="prog" title="${Math.round(p * 100)}% complete"><i style="width:${p * 100}%"></i></div><span class="tag">${open.length ? open.length + ' open' : 'complete'}</span></div>
     <div class="pn-b">${body}${gate}
       ${out || !pre ? '' : `<div class="sec"><div class="sec-h">Narrative summary<button class="q" data-act="def" data-def="49" aria-label="Definition">?</button></div>
         <textarea id="summary" rows="6" placeholder="Set in [place] and [time], this is a story about how [hero] [action]… The take-away message is [moral]." ${lk ? 'disabled' : ''}>${esc(c.summary)}</textarea>
@@ -748,7 +763,8 @@ async function submit() {
     first:(prev && prev.first) || snap,
     revisedAfterComparison:prev ? !!(prev.revisedAfterComparison || c.sawOthers) : false};
   c.status = 'submitted'; c.submittedAt = sub.submittedAt;
-  try { setSync('saving'); await writeSub(key, sub); queueSave(key); setSync('saved'); }
+  if (S.mode === 'shared' && !isPractice(key)) { c.updatedAt = now(); LS.set(bkKey(key), c); pendingSave.add(key); }
+  try { setSync('saving'); await writeSub(key, sub); await flushSave(key); if (!pendingSave.size) setSync('saved'); }
   catch (e) { c.status = 'draft'; setSync('error', e && e.message); toast('Could not submit. Check your connection and try again.'); return; }
   const others = Object.keys(subsOf(key)).filter(u => u !== S.uid).length;
   if (screenedOut(c)) toast('Prescreening submitted. This article needs no further coding.'); else toast(others && isLead() ? 'Submitted. You can now compare with ' + others + ' other coding' + (others > 1 ? 's' : '') + '.' : 'Submitted. Thank you!');
@@ -1387,7 +1403,7 @@ document.addEventListener('scroll', e => { if (e.target === $('#pop')) return; i
 
 
 /* ================= roles ================= */
-const APP_VERSION = '2026-11-03f';
+const APP_VERSION = '2026-11-03g';
 const isLead = () => S.mode !== 'shared' || S.isAdmin;
 function allArticles() { return Object.values(S.articles).sort((a, b) => (a.order ?? 1e9) - (b.order ?? 1e9) || String(a.id).localeCompare(String(b.id), undefined, {numeric:true})); }
 function myQueue() { return corpus().filter(a => (assigned(a) || []).includes(String(S.coder))); }
@@ -1633,18 +1649,42 @@ async function sendFeedback() {
 /* ================= saving (Supabase) ================= */
 const bkKey = key => 'npf-annotator:backup:' + S.uid + ':' + key;
 const saveT = {}, saveChain = {};
+const pendingSave = new Set(); let lastSavedAt = null, signedOutWarned = false;
 function queueSave(key) {
   const c = draft(key); c.updatedAt = now();
   if (isPractice(key) || S.mode !== 'shared') { if (S.mode !== 'shared' && !isPractice(key)) S.local.drafts[key] = c; persistLocal(); return; }
-  LS.set(bkKey(key), c);
+  LS.set(bkKey(key), c); pendingSave.add(key);
   setSync('saving'); clearTimeout(saveT[key]);
-  saveT[key] = setTimeout(() => {
-    const body = clone(draft(key));
-    saveChain[key] = (saveChain[key] || Promise.resolve())
-      .then(async () => { const {error} = await sb.from('drafts').upsert({user_id:S.uid, article_key:key, data:body, updated_at:now()}); if (error) throw error; })
-      .then(() => setSync('saved'), e => { setSync('error', e && e.message); clearTimeout(saveT[key]); saveT[key] = setTimeout(() => queueSave(key), 5000); });
-  }, 700);
+  saveT[key] = setTimeout(() => flushSave(key), 700);
 }
+function flushSave(key) {
+  clearTimeout(saveT[key]);
+  if (S.mode !== 'shared' || !pendingSave.has(key)) return saveChain[key] || Promise.resolve();
+  const body = clone(draft(key));
+  const send = () => sb.from('drafts').upsert({user_id:S.uid, article_key:key, data:body, updated_at:now()});
+  saveChain[key] = (saveChain[key] || Promise.resolve())
+    .then(async () => {
+      let {error} = await send();
+      if (error && /jwt|token|expired|401|not authenticated/i.test((error.message || '') + ' ' + (error.code || ''))) { await sb.auth.refreshSession().catch(() => {}); ({error} = await send()); }
+      if (error) throw error;
+    })
+    .then(() => {
+      if ((draft(key, false) || {}).updatedAt === body.updatedAt) pendingSave.delete(key);
+      lastSavedAt = new Date(); if (!pendingSave.size) setSync('saved');
+    }, async e => {
+      const offline = !navigator.onLine;
+      if (!offline) { const r = await sb.auth.getSession().catch(() => ({data:{}})); if (!r.data || !r.data.session) { if (!signedOutWarned) { signedOutWarned = true; toast('You were signed out. Your work is safe on this device: sign in again to save it to the server.', 8000); } } }
+      setSync(offline ? 'offline' : 'error', e && e.message);
+      clearTimeout(saveT[key]); saveT[key] = setTimeout(() => flushSave(key), offline ? 3000 : 5000);
+    });
+  return saveChain[key];
+}
+function flushAll() { pendingSave.forEach(k => flushSave(k)); }
+addEventListener('online', () => { if (S.mode === 'shared') { toast('Back online. Saving your changes…'); flushAll(); } });
+addEventListener('offline', () => { if (S.mode === 'shared') setSync('offline'); });
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flushAll(); });
+addEventListener('pagehide', flushAll);
+addEventListener('beforeunload', e => { if (S.mode === 'shared' && pendingSave.size) { flushAll(); e.preventDefault(); e.returnValue = ''; } });
 async function writeSub(key, sub) {
   if (isPractice(key)) { S.practiceSubs[key] = sub; persistLocal(); return; }
   if (S.mode !== 'shared') { (S.local.subs[S.uid] = S.local.subs[S.uid] || {})[key] = sub; S.subs = S.local.subs; persistLocal(); return; }
@@ -1751,7 +1791,9 @@ async function loadSubs() {
 async function loadFinals() { const rows = await fetchAll('finals', 'article_key,data'); S.finals = {}; rows.forEach(r => S.finals[r.article_key] = r.data || {}); relCache.sig = ''; }
 async function loadDrafts() {
   const rows = await fetchAll('drafts', 'article_key,data,updated_at');
-  rows.forEach(r => { const local = LS.get(bkKey(r.article_key), null); S.drafts[r.article_key] = local && (local.updatedAt || '') > ((r.data || {}).updatedAt || '') ? local : r.data; });
+  const resend = [];
+  rows.forEach(r => { const local = LS.get(bkKey(r.article_key), null); const newer = local && (local.updatedAt || '') > ((r.data || {}).updatedAt || ''); S.drafts[r.article_key] = newer ? local : r.data; if (newer) resend.push(r.article_key); });
+  setTimeout(() => resend.forEach(k => { if (S.drafts[k]) { pendingSave.add(k); LS.set(bkKey(k), S.drafts[k]); flushSave(k); } }), 0);
   try { for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); const pre = 'npf-annotator:backup:' + S.uid + ':'; if (k && k.startsWith(pre)) { const key = k.slice(pre.length); if (!S.drafts[key] && S.articles[key]) { S.drafts[key] = LS.get(k, null); queueSave(key); } } } } catch {}
 }
 function soft() {

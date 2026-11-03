@@ -340,3 +340,11 @@ img{max-width:100%}
 .wk-f{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap}
 .confetti{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:90}
 @media (max-width:700px){.hero-w{grid-template-columns:auto minmax(0,1fr)}.wk-stats{grid-column:1/3;justify-content:space-around}.wk-stats div{text-align:center}}
+
+/* save status */
+.savest{font-size:11.5px;color:var(--muted);display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
+.savest::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--good)}
+.savest.busy::before{background:var(--warn)}
+.savest.err{color:var(--bad)} .savest.err::before{background:var(--bad)}
+.pn-h .savest{margin-left:auto;order:3}
+@media (min-width:861px){.rd-bar .savest{display:none}}
