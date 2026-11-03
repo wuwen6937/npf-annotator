@@ -235,3 +235,108 @@ create policy subs_delete on public.submissions for delete to authenticated usin
 
 drop policy if exists history_read on public.submission_history;
 create policy history_read on public.submission_history for select to authenticated using (user_id = (select auth.uid()) or (select is_lead()));
+
+-- ================================================================ lead-only access, feedback, backups (2026-11-03)
+-- coders see only their own work; comparison data is lead-only
+drop policy if exists subs_read on public.submissions;
+create policy subs_read on public.submissions for select to authenticated using (user_id = (select auth.uid()) or (select is_lead()));
+drop policy if exists finals_read on public.finals;
+create policy finals_read on public.finals for select to authenticated using ((select is_lead()));
+drop policy if exists members_read on public.members;
+create policy members_read on public.members for select to authenticated using (email = (select current_email()) or (select is_lead()));
+revoke execute on function public.has_submitted(text) from authenticated;
+
+-- codings can never disappear by deleting an article; archive instead
+alter table public.articles add column if not exists archived boolean not null default false;
+alter table public.submissions drop constraint if exists submissions_article_key_fkey;
+alter table public.submissions add constraint submissions_article_key_fkey foreign key (article_key) references public.articles(key) on delete restrict;
+alter table public.drafts drop constraint if exists drafts_article_key_fkey;
+alter table public.drafts add constraint drafts_article_key_fkey foreign key (article_key) references public.articles(key) on delete restrict;
+
+-- feedback and bug reports
+create table if not exists public.feedback (
+  id bigserial primary key, user_id uuid default auth.uid(), email text default public.current_email(), coder text,
+  kind text not null default 'bug' check (kind in ('bug', 'idea', 'question')),
+  message text not null check (length(message) between 1 and 5000),
+  context jsonb not null default '{}'::jsonb, status text not null default 'open' check (status in ('open', 'done')),
+  created_at timestamptz not null default now());
+alter table public.feedback enable row level security;
+drop policy if exists feedback_insert on public.feedback; drop policy if exists feedback_read on public.feedback;
+drop policy if exists feedback_update on public.feedback; drop policy if exists feedback_delete on public.feedback;
+create policy feedback_insert on public.feedback for insert to authenticated with check ((select is_member()) and user_id = (select auth.uid()));
+create policy feedback_read on public.feedback for select to authenticated using (user_id = (select auth.uid()) or (select is_lead()));
+create policy feedback_update on public.feedback for update to authenticated using ((select is_lead())) with check ((select is_lead()));
+create policy feedback_delete on public.feedback for delete to authenticated using ((select is_lead()));
+create index if not exists feedback_user_idx on public.feedback(user_id);
+revoke all on public.feedback from anon;
+create or replace function public.feedback_before() returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if auth.uid() is not null then new.user_id := auth.uid(); new.email := current_email(); new.coder := (select coder from members where user_id = auth.uid()); end if;
+  return new;
+end $$;
+drop trigger if exists feedback_before on public.feedback;
+create trigger feedback_before before insert on public.feedback for each row execute function public.feedback_before();
+revoke execute on function public.feedback_before() from public, anon, authenticated;
+
+-- work progress for the lead (status only, never the content of drafts)
+create or replace function public.progress_overview()
+returns table (user_id uuid, article_key text, status text, marks int, updated_at timestamptz)
+language sql stable security definer set search_path = public as $$
+  select d.user_id, d.article_key,
+         case when s.user_id is not null and coalesce(d.data->>'status','') = 'submitted' then 'submitted'
+              when s.user_id is not null then 'reopened' else 'draft' end,
+         coalesce(jsonb_array_length(d.data->'anns'), 0), d.updated_at
+  from drafts d left join submissions s on s.user_id = d.user_id and s.article_key = d.article_key
+  where is_lead()
+  union all
+  select s.user_id, s.article_key, 'submitted', coalesce(jsonb_array_length(s.data->'anns'), 0), s.submitted_at
+  from submissions s
+  where is_lead() and not exists (select 1 from drafts d where d.user_id = s.user_id and d.article_key = s.article_key)
+$$;
+revoke execute on function public.progress_overview() from public, anon;
+grant execute on function public.progress_overview() to authenticated;
+
+-- bulk assignment (lead)
+create or replace function public.set_assignments(assignments jsonb) returns int language plpgsql security definer set search_path = public as $$
+declare n int;
+begin
+  if not is_lead() then raise exception 'Only the project lead can assign coders'; end if;
+  update articles a set coders = array(select jsonb_array_elements_text(x.value)), updated_at = now() from jsonb_each(assignments) x where a.key = x.key;
+  get diagnostics n = row_count; return n;
+end $$;
+revoke execute on function public.set_assignments(jsonb) from public, anon;
+grant execute on function public.set_assignments(jsonb) to authenticated;
+
+-- backups inside the database: nightly (codings, 30 days) and weekly (full incl. texts, last 6)
+create table if not exists public.backups (id bigserial primary key, taken_at timestamptz not null default now(), kind text not null, bytes int, data jsonb not null);
+alter table public.backups enable row level security;
+drop policy if exists backups_read on public.backups;
+create policy backups_read on public.backups for select to authenticated using ((select is_lead()));
+revoke all on public.backups from anon;
+create or replace function public.take_backup(full_copy boolean default false) returns bigint language plpgsql security definer set search_path = public as $$
+declare d jsonb; new_id bigint;
+begin
+  if auth.uid() is not null and not is_lead() then raise exception 'Only the project lead can make backups'; end if;
+  d := jsonb_build_object('taken_at', now(),
+    'members', (select coalesce(jsonb_agg(to_jsonb(m)), '[]') from members m),
+    'articles', (select coalesce(jsonb_agg(case when full_copy then to_jsonb(a) else to_jsonb(a) - 'body' end), '[]') from articles a),
+    'submissions', (select coalesce(jsonb_agg(to_jsonb(s)), '[]') from submissions s),
+    'drafts', (select coalesce(jsonb_agg(to_jsonb(x)), '[]') from drafts x),
+    'finals', (select coalesce(jsonb_agg(to_jsonb(f)), '[]') from finals f),
+    'feedback', (select coalesce(jsonb_agg(to_jsonb(b)), '[]') from feedback b));
+  insert into backups (kind, bytes, data) values (case when full_copy then 'full' when auth.uid() is null then 'daily' else 'manual' end, octet_length(d::text), d) returning id into new_id;
+  delete from backups where kind in ('daily', 'manual') and taken_at < now() - interval '30 days';
+  delete from backups where kind = 'full' and id not in (select id from backups where kind = 'full' order by taken_at desc limit 6);
+  return new_id;
+end $$;
+revoke execute on function public.take_backup(boolean) from public, anon;
+grant execute on function public.take_backup(boolean) to authenticated;
+create extension if not exists pg_cron;
+select cron.unschedule(jobid) from cron.job where jobname in ('npf-daily-backup', 'npf-weekly-full-backup');
+select cron.schedule('npf-daily-backup', '15 2 * * *', $$select public.take_backup(false)$$);
+select cron.schedule('npf-weekly-full-backup', '45 2 * * 0', $$select public.take_backup(true)$$);
+do $$ begin
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'feedback') then
+    alter publication supabase_realtime add table public.feedback;
+  end if;
+end $$;

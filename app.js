@@ -166,7 +166,7 @@ function persistLocal() {
 const isPractice = key => !!(S.practiceArt[key]);
 function art(key) { return S.practiceArt[key] || S.articles[key]; }
 function corpus() {
-  return Object.values(S.articles).sort((a, b) => (a.order ?? 1e9) - (b.order ?? 1e9) || String(a.id).localeCompare(String(b.id), undefined, {numeric:true}));
+  return Object.values(S.articles).filter(a => !a.archived).sort((a, b) => (a.order ?? 1e9) - (b.order ?? 1e9) || String(a.id).localeCompare(String(b.id), undefined, {numeric:true}));
 }
 function draft(key, create = true) {
   const store = isPractice(key) ? S.practiceDrafts : S.drafts;
@@ -404,17 +404,20 @@ function consensusRow(a, cs) {
 /* ================= rendering: top bar ================= */
 function render() { renderTop(); renderView(); }
 function renderTop() {
-  const tabs = [['code','Code'],['compare','Compare'],['reliability','Reliability'],['analyse','Analyse']];
+  const nf = openFeedback();
+  const tabs = isLead() ? [['code','Code'], ...(S.mode === 'shared' ? [['progress','Progress' + (nf ? ` <span class="badge">${nf}</span>` : '')]] : []), ['compare','Compare'],['reliability','Reliability'],['analyse','Analyse']] : [];
+  const q = !isLead() ? myQueue() : [], qd = q.filter(a => myStatus(a.key) === 'done').length;
   const sy = S.sync;
   $('#top').innerHTML = `
     <div class="brand"><span class="mark" aria-hidden="true">叙</span><span class="brand-t">NPF Annotator</span></div>
-    <nav class="tabs" aria-label="Views">${tabs.map(([k, l]) => `<button data-act="view" data-v="${k}" class="${S.view === k ? 'on' : ''}">${l}</button>`).join('')}</nav>
+    ${tabs.length ? `<nav class="tabs" aria-label="Views">${tabs.map(([k, l]) => `<button data-act="view" data-v="${k}" class="${S.view === k ? 'on' : ''}">${l}</button>`).join('')}</nav>` : S.mode === 'shared' ? `<span class="myprog" title="Your assigned articles"><b>${qd}</b> of ${q.length} done<span class="abar"><i style="width:${q.length ? qd / q.length * 100 : 0}%;background:var(--good)"></i></span></span>` : ''}
     <div class="tools">
       <span class="sync ${sy.s === 'saved' ? 'ok' : sy.s === 'saving' ? 'busy' : sy.s === 'error' ? 'err' : ''}" title="${esc(sy.msg)}"><i></i>${esc(sy.label || (S.mode === 'shared' ? 'Shared project' : S.mode === 'loading' ? 'Connecting…' : 'This browser only'))}</span>
       <button class="btn sm" data-act="codebook">Codebook</button>
       ${S.isAdmin ? `<button class="btn sm" data-act="articles">Articles</button>` : ''}
       ${S.isAdmin && S.mode === 'shared' ? `<button class="btn sm" data-act="team">Team</button>` : ''}
-      <button class="btn sm" data-act="export">Export</button>
+      ${S.mode === 'shared' ? `<button class="btn sm" data-act="feedback">Feedback</button>` : ''}
+      ${isLead() ? `<button class="btn sm" data-act="export">Export</button>` : ''}
       ${S.mode === 'local' && sb ? `<button class="btn sm pri" data-act="tosignin">Sign in</button>` : ''}
       <button class="btn sm me" data-act="coder" title="${S.mode === 'shared' ? esc(S.email) : 'Change your coder number'}">${S.coder ? 'Coder ' + esc(S.coder) + ' · ' + esc(coderIni(S.coder)) : S.mode === 'shared' ? 'Account' : 'Set coder'}</button>
     </div>`;
@@ -425,7 +428,10 @@ function setSync(s, msg) {
 }
 function renderView() {
   const v = $('#view'); hidePop();
+  if (!isLead() && S.view !== 'code') S.view = 'code';
+  if (S.view === 'progress' && S.mode !== 'shared') S.view = 'code';
   if (S.view === 'code') return viewCode(v);
+  if (S.view === 'progress') return viewProgress(v);
   if (S.view === 'compare') return viewCompare(v);
   if (S.view === 'reliability') return viewRel(v);
   if (S.view === 'analyse') return viewAnalyse(v);
@@ -438,7 +444,7 @@ function viewCode(v) {
 }
 function listItems() {
   const q = S.list.q.toLowerCase(), f = S.list.f;
-  return corpus().filter(a => {
+  return (isLead() ? corpus() : myQueue()).filter(a => {
     if (q && !(String(a.id).toLowerCase().includes(q) || String(a.title || '').toLowerCase().includes(q) || String(a.text || '').toLowerCase().includes(q))) return false;
     const st = myStatus(a.key), as = assigned(a);
     if (f === 'mine' && as && !as.includes(String(S.coder))) return false;
@@ -451,19 +457,20 @@ function artItem(a) {
   const st = myStatus(a.key), n = Object.keys(subsOf(a.key)).filter(u => !EXAMPLE_CODINGS[u]).length, as = assigned(a);
   return `<button class="art ${S.cur === a.key ? 'on' : ''}" data-act="open" data-key="${esc(a.key)}" title="${st === 'done' ? 'Submitted' : st === 'draft' ? 'In progress' : 'Not started'}">
     <span class="st ${st}"></span><span class="art-id">${esc(a.id)}</span>
-    <span style="display:flex;gap:4px"><span class="tag">${a.dataset === '1' ? 'CN' : a.dataset === '2' ? 'EN' : '?'}</span>${a.practice ? '' : `<span class="tag" title="Coders who submitted">${n}${as ? '/' + as.length : ''}</span>`}</span>
+    <span style="display:flex;gap:4px"><span class="tag">${a.dataset === '1' ? 'CN' : a.dataset === '2' ? 'EN' : '?'}</span>${a.practice || !isLead() ? '' : `<span class="tag" title="Coders who submitted">${n}${as ? '/' + as.length : ''}</span>`}</span>
     <span class="art-t">${esc(a.title || String(a.text || '').slice(0, 80))}</span></button>`;
 }
 function renderList() {
   const el = $('#list'); if (!el) return;
-  const items = listItems(); const hasAssign = corpus().some(a => assigned(a));
-  const total = corpus().length, done = corpus().filter(a => myStatus(a.key) === 'done').length;
+  const items = listItems(); const hasAssign = isLead() && corpus().some(a => assigned(a));
+  const pool = isLead() ? corpus() : myQueue();
+  const total = pool.length, done = pool.filter(a => myStatus(a.key) === 'done').length;
   el.innerHTML = `<div class="list-h">
       <input id="lq" type="search" placeholder="Search ID, title or text" value="${esc(S.list.q)}" aria-label="Search articles">
       <div class="chips">${[['all','All'], ...(hasAssign ? [['mine','Mine']] : []), ['todo','To do'], ['done','Submitted']].map(([k, l]) => `<button class="chip ${S.list.f === k ? 'on' : ''}" data-act="lf" data-v="${k}">${l}</button>`).join('')}</div>
     </div>
     <div class="grp-l">Practice</div>${PRACTICE.map(artItem).join('')}
-    <div class="grp-l">Corpus · ${done}/${total} submitted</div>
+    <div class="grp-l">${isLead() ? 'Corpus' : 'My articles'} · ${done}/${total} submitted</div>
     ${items.length ? items.map(artItem).join('') : `<p style="color:var(--muted);font-size:13px;padding:4px 8px">${total ? 'No article matches.' : S.mode === 'loading' ? 'Loading articles…' : S.isAdmin ? 'No articles yet. Use <b>Articles</b> at the top to add them.' : 'No articles yet. The project lead adds them.'}</p>`}`;
 }
 function locked(key) { const d = draft(key); return d.status === 'submitted'; }
@@ -477,7 +484,7 @@ function renderReader() {
   el.innerHTML = `<div class="rd">
     <div class="rd-meta"><span class="tag">${esc(a.id)}</span><span>${a.dataset === '1' ? 'Chinese' : 'English'}</span>${a.ebene ? `<span>· Ebene ${esc(a.ebene)}</span>` : ''}${a.url ? `<a href="${esc(a.url)}" target="_blank" rel="noopener">Open source ↗</a>` : ''}${a.practice ? '<span class="pill na">Practice, not part of the corpus</span>' : ''}</div>
     <h1 lang="${a.dataset === '1' ? 'zh' : 'en'}">${esc(a.title || a.id)}</h1>
-    ${lk ? `<div class="banner good"><span>✓ Submitted ${esc(fmtDate(c.submittedAt))}.${others ? ' ' + others + ' other coding' + (others > 1 ? 's' : '') + ' available.' : ''}</span><span style="margin-left:auto;display:flex;gap:8px">${nextKey() ? `<button class="btn sm pri" data-act="next">Next article →</button>` : ''}${others ? `<button class="btn sm${nextKey() ? '' : ' pri'}" data-act="gocmp" data-key="${esc(a.key)}">Compare</button>` : ''}<button class="btn sm" data-act="reopen">Edit again</button></span></div>` : ''}
+    ${lk ? `<div class="banner good"><span>✓ Submitted ${esc(fmtDate(c.submittedAt))}.${others && isLead() ? ' ' + others + ' other coding' + (others > 1 ? 's' : '') + ' available.' : ' Thank you!'}</span><span style="margin-left:auto;display:flex;gap:8px">${nextKey() ? `<button class="btn sm pri" data-act="next">Next article →</button>` : ''}${others && isLead() ? `<button class="btn sm${nextKey() ? '' : ' pri'}" data-act="gocmp" data-key="${esc(a.key)}">Compare</button>` : ''}<button class="btn sm" data-act="reopen">Edit again</button></span></div>` : ''}
     ${!S.hintOff && !lk ? `<div class="hint"><span><b>${matchMedia('(pointer: coarse)').matches ? 'Press and hold a word, drag to cover the passage, then pick a category.' : 'Select words in the text to code them.'}</b> A menu opens with the codebook categories${matchMedia('(pointer: coarse)').matches ? '' : '; each has a shortcut key'}. Click a highlight to change or delete it. Most Yes/No answers on the right fill themselves from what you mark.</span><button data-act="hintoff" aria-label="Hide tip">✕</button></div>` : ''}
     <div class="rd-bar">
       <span style="display:flex;align-items:center;gap:6px" title="Technology and positive/negative turns are tagged to this plot">Plot passages go to <span class="mini-seg"><button data-act="plot" data-v="1" class="${S.plot === 1 ? 'on' : ''}">1</button><button data-act="plot" data-v="2" class="${S.plot === 2 ? 'on' : ''}">2</button></span></span>
@@ -696,7 +703,7 @@ async function submit() {
   try { setSync('saving'); await writeSub(key, sub); queueSave(key); setSync('saved'); }
   catch (e) { c.status = 'draft'; setSync('error', e && e.message); toast('Could not submit. Check your connection and try again.'); return; }
   const others = Object.keys(subsOf(key)).filter(u => u !== S.uid).length;
-  toast(others ? 'Submitted. You can now compare with ' + others + ' other coding' + (others > 1 ? 's' : '') + '.' : 'Submitted. Thank you!');
+  toast(others && isLead() ? 'Submitted. You can now compare with ' + others + ' other coding' + (others > 1 ? 's' : '') + '.' : 'Submitted. Thank you!');
   render();
 }
 function reopen() { const c = draft(S.cur); c.status = 'draft'; queueSave(S.cur); render(); }
@@ -1062,8 +1069,8 @@ async function pickCoder(code, then) {
 let importBuf = [];
 function openArticles() {
   importBuf = [];
-  const list = corpus();
-  modal(`<div class="mh"><div><h2>Articles</h2><p class="sub">${list.length} in the corpus. Codings stay attached when you re-import an article with the same ID.</p></div><button class="x" data-act="close" aria-label="Close">×</button></div>
+  const list = allArticles();
+  modal(`<div class="mh"><div><h2>Articles</h2><p class="sub">${corpus().length} in the corpus${list.length > corpus().length ? ', ' + (list.length - corpus().length) + ' archived' : ''}. Codings stay attached when you re-import an article with the same ID. Articles with codings can only be archived, never deleted.</p></div><button class="x" data-act="close" aria-label="Close">×</button></div>
     <div class="drop" id="drop"><b>Drop files here</b> or <label class="link" style="cursor:pointer">choose files<input type="file" id="fileIn" multiple accept=".xlsx,.xls,.csv,.txt,.docx,.json" hidden></label><div style="font-size:12.5px;margin-top:6px">Excel/CSV with one article per row (columns like <i>Article ID, Dataset, URL, Title, Text, Coders, Ebene</i>) · .docx or .txt, one article per file (file name = ID) · a backup .json</div></div>
     <div id="imp"></div>
     <details style="margin-top:14px"><summary class="link" style="cursor:pointer">Paste a single article</summary>
@@ -1074,7 +1081,7 @@ function openArticles() {
         <label>Text<textarea id="na-tx" rows="8"></textarea></label>
         <div><button class="btn pri" data-act="addone">Add article</button></div></div></details>
     <div class="tw" style="margin-top:14px;max-height:280px;overflow:auto"><table><thead><tr><th>ID</th><th>Data</th><th>Ebene</th><th>Coders</th><th class="n">Codings</th><th></th></tr></thead><tbody>
-      ${list.map(a => `<tr><td class="n" style="text-align:left">${esc(a.id)}</td><td>${a.dataset === '1' ? 'CN' : 'EN'}</td><td>${esc(a.ebene || '')}</td><td><input data-assign="${esc(a.key)}" value="${esc((assigned(a) || []).join(','))}" placeholder="all" style="width:90px;padding:2px 6px"></td><td class="n">${Object.keys(subsOf(a.key)).length}</td><td><button class="ic" data-act="delart" data-key="${esc(a.key)}" title="Remove article" aria-label="Remove article">✕</button></td></tr>`).join('') || '<tr><td colspan="6" style="color:var(--muted)">No articles yet.</td></tr>'}</tbody></table></div>`, true);
+      ${list.map(a => `<tr style="${a.archived ? 'opacity:.55' : ''}"><td class="n" style="text-align:left">${esc(a.id)}${a.archived ? ' <span class="pill na">archived</span>' : ''}</td><td>${a.dataset === '1' ? 'CN' : 'EN'}</td><td>${esc(a.ebene || '')}</td><td><input data-assign="${esc(a.key)}" value="${esc((assigned(a) || []).join(','))}" placeholder="all" style="width:90px;padding:2px 6px"></td><td class="n">${Object.keys(subsOf(a.key)).length}</td><td style="white-space:nowrap"><button class="btn sm" data-act="archive" data-key="${esc(a.key)}" data-v="${a.archived ? '0' : '1'}">${a.archived ? 'Restore' : 'Archive'}</button> <button class="ic" data-act="delart" data-key="${esc(a.key)}" title="Delete article" aria-label="Delete article">✕</button></td></tr>`).join('') || '<tr><td colspan="6" style="color:var(--muted)">No articles yet.</td></tr>'}</tbody></table></div>`, true);
   const drop = $('#drop'), fi = $('#fileIn');
   fi.onchange = () => readFiles([...fi.files]);
   drop.ondragover = e => { e.preventDefault(); drop.classList.add('over'); };
@@ -1123,6 +1130,16 @@ document.addEventListener('click', async e => {
     case 'open': S.cur = d.key; S.undo = []; S.hidden = {}; renderList(); renderReader(); renderPanel(); $('#reader').scrollTop = 0; if (isPhone()) setPane('text'); break;
     case 'next': { const k = nextKey(); if (k) { S.cur = k; S.undo = []; S.hidden = {}; render(); $('#reader').scrollTop = 0; if (isPhone()) setPane('text'); } break; }
     case 'mpane': setPane(d.v); break;
+    case 'feedback': openFeedbackForm(); break;
+    case 'fbkind': S.fbKind = d.v; $$('[data-act="fbkind"]').forEach(b => b.classList.toggle('on', b.dataset.v === d.v)); break;
+    case 'fbsend': sendFeedback(); break;
+    case 'fbstatus': { const {error} = await sb.from('feedback').update({status:d.v}).eq('id', +d.id); if (error) toast('Could not update: ' + error.message); await loadFeedback(); render(); break; }
+    case 'progrefresh': S.progressAt = 0; await Promise.all([loadProgress(), loadFeedback(), loadBackups(), loadSubs()]); render(); toast('Updated'); break;
+    case 'autoassign': openAutoAssign(); break;
+    case 'doautoassign': doAutoAssign(); break;
+    case 'archive': setArchived(d.key, d.v === '1'); break;
+    case 'backupnow': { t.disabled = true; const {error} = await sb.rpc('take_backup', {full_copy:true}); toast(error ? 'Backup failed: ' + error.message : 'Full copy saved in the database.'); await loadBackups(); renderView(); break; }
+    case 'backupdl': { const {data, error} = await sb.from('backups').select('taken_at,kind,data').eq('id', +d.id).single(); if (error) { toast('Could not load it: ' + error.message); break; } saveFile('NPF_backup_' + String(data.taken_at).slice(0, 10) + '_' + data.kind + '.json', JSON.stringify(data.data, null, 1)); break; }
     case 'team': openTeam(); break;
     case 'teamdel': { if (t.dataset.sure) { const {error} = await sb.from('members').delete().eq('email', d.email); if (error) toast('Could not remove: ' + error.message); await loadMembers(); openTeam(); } else { t.dataset.sure = '1'; t.textContent = 'Remove?'; t.className = 'btn sm'; t.style.color = 'var(--bad)'; } break; }
     case 'copylink': copyText(redirectUrl(), 'Link copied.'); break;
@@ -1183,6 +1200,7 @@ document.addEventListener('click', async e => {
 document.addEventListener('change', e => {
   const t = e.target;
   if (t.dataset.act === 'final') { saveFinal(t.dataset.key, {values:{[t.dataset.k]:t.value === '' ? '' : +t.value}}).then(() => renderView()); }
+  if (t.dataset.act === 'progopen') { S.prog.onlyOpen = t.checked; renderView(); return; }
   if (t.dataset.act === 'leadview') { S.leadView = t.checked; LS.set('npf:leadView', t.checked); if (t.checked) toast('Lead view on. Code your own articles before you look at them here.', 4000); renderView(); return; }
   if (t.dataset.act === 'anf') { S.an[t.dataset.f] = t.value; renderView(); }
   if (t.dataset.assign) setAssign(t.dataset.assign, t.value);
@@ -1223,6 +1241,127 @@ addEventListener('resize', () => hidePop());
 document.addEventListener('scroll', e => { if (e.target === $('#pop')) return; if (S.menu && S.menu.type !== 'ann') hidePop(); }, true);
 
 /* ================= boot ================= */
+
+
+/* ================= roles ================= */
+const APP_VERSION = '2026-11-03b';
+const isLead = () => S.mode !== 'shared' || S.isAdmin;
+function allArticles() { return Object.values(S.articles).sort((a, b) => (a.order ?? 1e9) - (b.order ?? 1e9) || String(a.id).localeCompare(String(b.id), undefined, {numeric:true})); }
+function myQueue() { return corpus().filter(a => { const as = assigned(a); return !as || as.includes(String(S.coder)); }); }
+
+/* ================= lead data ================= */
+async function loadFeedback() { if (S.mode !== 'shared' || !S.isAdmin) return; const {data, error} = await sb.from('feedback').select('*').order('created_at', {ascending:false}).limit(500); if (!error) S.feedback = data; }
+async function loadProgress() { if (S.mode !== 'shared' || !S.isAdmin) return; const {data, error} = await sb.rpc('progress_overview'); if (!error) { S.progress = data || []; S.progressAt = Date.now(); } }
+async function loadBackups() { if (S.mode !== 'shared' || !S.isAdmin) return; const {data, error} = await sb.from('backups').select('id,kind,bytes,taken_at').order('taken_at', {ascending:false}).limit(60); if (!error) S.backups = data; }
+const openFeedback = () => (S.feedback || []).filter(f => f.status === 'open').length;
+
+/* ================= PROGRESS view (lead) ================= */
+let progTimer;
+function teamCoders() {
+  const ms = S.mode === 'shared' ? (S.members || []).filter(m => m.coder) : CODERS.map(c => ({coder:c.code, email:'', user_id:null}));
+  return ms.slice().sort((a, b) => String(a.coder).localeCompare(String(b.coder), undefined, {numeric:true}));
+}
+function progressModel() {
+  const coders = teamCoders(); const byUid = {}; coders.forEach(m => { if (m.user_id) byUid[m.user_id] = m.coder; });
+  const st = {}; // coder -> key -> {status, marks, at}
+  (S.progress || []).forEach(r => { const c = byUid[r.user_id] || (S.profiles[r.user_id] || {}).coder; if (!c) return; (st[c] = st[c] || {})[r.article_key] = {status:r.status, marks:r.marks, at:r.updated_at}; });
+  Object.entries(S.subs || {}).forEach(([uid, m]) => { const c = byUid[uid] || (S.profiles[uid] || {}).coder; if (!c) return; for (const k in m) { st[c] = st[c] || {}; if (!st[c][k]) st[c][k] = {status:'submitted', marks:(m[k].anns || []).length, at:m[k].submittedAt}; } });
+  const arts = corpus();
+  const need = a => assigned(a) || coders.map(m => String(m.coder));
+  const rows = coders.map(m => {
+    const mine = arts.filter(a => need(a).includes(String(m.coder))); const s = st[m.coder] || {};
+    const done = mine.filter(a => s[a.key] && s[a.key].status === 'submitted').length;
+    const prog = mine.filter(a => s[a.key] && s[a.key].status !== 'submitted').length;
+    const last = Object.values(s).map(x => x.at).filter(Boolean).sort().pop();
+    return {m, total:mine.length, done, prog, open:mine.length - done - prog, last};
+  });
+  const complete = arts.filter(a => need(a).every(c => st[c] && st[c][a.key] && st[c][a.key].status === 'submitted')).length;
+  const expected = arts.reduce((n, a) => n + need(a).length, 0), submitted = rows.reduce((n, r) => n + r.done, 0);
+  return {coders, st, arts, rows, complete, expected, submitted, need};
+}
+const ago = s => { if (!s) return 'never'; const d = (Date.now() - new Date(s)) / 60000; if (d < 2) return 'just now'; if (d < 60) return Math.round(d) + ' min ago'; if (d < 1440) return Math.round(d / 60) + ' h ago'; return Math.round(d / 1440) + ' days ago'; };
+const kb = b => b == null ? '' : b > 1e6 ? (b / 1e6).toFixed(1) + ' MB' : Math.max(1, Math.round(b / 1e3)) + ' KB';
+function viewProgress(v) {
+  clearInterval(progTimer);
+  if (S.mode === 'shared') { if (!S.progressAt || Date.now() - S.progressAt > 20000) Promise.all([loadProgress(), loadFeedback(), loadBackups()]).then(() => { if (S.view === 'progress') renderView(); }); progTimer = setInterval(() => { if (S.view !== 'progress') return clearInterval(progTimer); loadProgress().then(() => { if (S.view === 'progress' && $('#modal').hidden && !(document.activeElement && /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName))) renderView(); }); }, 60000); }
+  const P = progressModel(); const f = S.prog || (S.prog = {onlyOpen:true});
+  const sym = s => !s ? '<i class="pcd todo" title="Not started"></i>' : s.status === 'submitted' ? `<i class="pcd done" title="Submitted ${esc(fmtDate(s.at))}"></i>` : s.status === 'reopened' ? `<i class="pcd reo" title="Reopened after submitting"></i>` : `<i class="pcd wip" title="In progress · ${s.marks} marks · ${esc(ago(s.at))}"></i>`;
+  const artRows = P.arts.filter(a => !f.onlyOpen || !P.need(a).every(c => P.st[c] && P.st[c][a.key] && P.st[c][a.key].status === 'submitted'));
+  const fb = S.feedback || [];
+  v.innerHTML = `<div class="wide"><div class="wrap">
+    <div class="vh"><div><h2>Progress</h2><p>Who has coded what, feedback from the team, and the safety copies of your data. Updates every minute while open.</p></div><div class="tools"><button class="btn sm" data-act="progrefresh">Refresh</button></div></div>
+    <div class="stats">
+      <div class="stat"><b>${P.submitted}<span style="font-size:15px;color:var(--muted)"> / ${P.expected}</span></b><span>codings submitted</span><div class="abar" style="margin-top:8px"><i style="width:${P.expected ? P.submitted / P.expected * 100 : 0}%;background:var(--accent)"></i></div></div>
+      <div class="stat"><b>${P.complete}<span style="font-size:15px;color:var(--muted)"> / ${P.arts.length}</span></b><span>articles coded by all their coders</span></div>
+      <div class="stat"><b>${P.rows.reduce((n, r) => n + r.prog, 0)}</b><span>codings in progress</span></div>
+      <div class="stat"><b style="color:${openFeedback() ? 'var(--warn)' : 'inherit'}">${openFeedback()}</b><span>open feedback messages</span></div>
+    </div>
+    <div class="card"><h3>Coders</h3><p class="sub">Counts are for the articles assigned to each coder (all articles if none are assigned).</p>
+      <div class="tw"><table><thead><tr><th>Coder</th><th>Email</th><th class="n">Assigned</th><th class="n">Submitted</th><th class="n">In progress</th><th class="n">Not started</th><th style="min-width:140px">Progress</th><th>Last activity</th></tr></thead><tbody>
+      ${P.rows.map(r => `<tr><td><b>${esc(coderIni(r.m.coder))}</b> <span class="tag">${esc(r.m.coder)}</span></td><td style="word-break:break-all">${esc(r.m.email || '')}${S.mode === 'shared' && !r.m.user_id ? ' <span class="pill na">not signed in yet</span>' : ''}</td>
+        <td class="n">${r.total}</td><td class="n">${r.done}</td><td class="n">${r.prog}</td><td class="n">${r.open}</td>
+        <td><div class="abar"><i style="width:${r.total ? r.done / r.total * 100 : 0}%;background:var(--good)"></i></div></td><td>${esc(ago(r.last))}</td></tr>`).join('') || '<tr><td colspan="8" style="color:var(--muted)">No coders yet. Add them under Team.</td></tr>'}</tbody></table></div></div>
+    <div class="card"><div class="vh" style="align-items:center"><div><h3>Articles</h3><p class="sub keyrow" style="margin:0"><span><i class="pcd done"></i>submitted</span><span><i class="pcd wip"></i>in progress</span><span><i class="pcd reo"></i>reopened</span><span><i class="pcd todo"></i>not started</span><span>blank = not assigned</span></p></div>
+      <div class="tools"><label style="display:flex;gap:6px;align-items:center;font-size:12.5px;color:var(--muted)"><input type="checkbox" data-act="progopen" ${f.onlyOpen ? 'checked' : ''} style="width:auto"> Only unfinished</label><button class="btn sm" data-act="autoassign">Assign coders automatically</button></div></div>
+      <div class="tw" style="max-height:460px;overflow:auto;margin-top:10px"><table><thead><tr><th>Article</th><th>Data</th>${P.coders.map(m => `<th class="n" style="text-align:center">${esc(coderIni(m.coder))}</th>`).join('')}</tr></thead><tbody>
+      ${artRows.slice(0, 400).map(a => `<tr><td><button class="link" data-act="gocode" data-key="${esc(a.key)}">${esc(a.id)}</button> <span style="color:var(--muted);font-size:12px">${esc((a.title || '').slice(0, 50))}</span></td><td>${a.dataset === '1' ? 'CN' : 'EN'}</td>
+        ${P.coders.map(m => `<td style="text-align:center">${P.need(a).includes(String(m.coder)) ? sym(P.st[m.coder] && P.st[m.coder][a.key]) : ''}</td>`).join('')}</tr>`).join('') || `<tr><td colspan="${P.coders.length + 2}" style="color:var(--muted)">${P.arts.length ? 'Every article is fully coded.' : 'No articles yet.'}</td></tr>`}</tbody></table></div></div>
+    <div class="card"><h3>Feedback and bug reports</h3><p class="sub">Sent by coders with the Feedback button. The app adds where they were and which device they used.</p>
+      ${S.mode !== 'shared' ? '<p class="small">Feedback works in the shared project.</p>' : fb.length ? fb.map(x => `<div class="psg"><div class="psg-m"><span class="pill ${x.kind === 'bug' ? 'bad' : x.kind === 'idea' ? 'good' : 'na'}">${x.kind}</span><b style="color:var(--ink)">${esc(x.coder ? coderIni(x.coder) : x.email)}</b><span>${esc(fmtDate(x.created_at))}</span>${x.context && x.context.article ? `<span>· article ${esc(x.context.article)}</span>` : ''}${x.context && x.context.view ? `<span>· ${esc(x.context.view)} view</span>` : ''}${x.context && x.context.device ? `<span>· ${esc(x.context.device)}</span>` : ''}
+          <button class="btn sm" style="margin-left:auto" data-act="fbstatus" data-id="${x.id}" data-v="${x.status === 'open' ? 'done' : 'open'}">${x.status === 'open' ? 'Mark as done' : 'Reopen'}</button></div>
+          <div style="${x.status === 'done' ? 'color:var(--muted);text-decoration:line-through' : ''};white-space:pre-wrap">${esc(x.message)}</div></div>`).join('') : '<p class="small">No feedback yet.</p>'}</div>
+    <div class="card"><h3>Safety copies</h3><p class="sub">The database copies everything by itself every night (codings, kept 30 days) and every Sunday (full copy including article texts, last 6 kept). For an extra copy outside Supabase, use Export → Full backup now and then and keep the file with your project files.</p>
+      ${S.mode !== 'shared' ? '<p class="small">Available in the shared project.</p>' : `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px"><button class="btn sm pri" data-act="backupnow">Make a full copy now</button><button class="btn sm" data-act="dl" data-k="json">Download a backup file now</button></div>
+      <div class="tw"><table><thead><tr><th>Taken</th><th>Type</th><th class="n">Size</th><th></th></tr></thead><tbody>${(S.backups || []).map(b => `<tr><td>${esc(fmtDate(b.taken_at))}</td><td>${b.kind === 'full' ? 'Full (with texts)' : b.kind === 'daily' ? 'Nightly (codings)' : 'Manual'}</td><td class="n">${kb(b.bytes)}</td><td><button class="link" data-act="backupdl" data-id="${b.id}">Download</button></td></tr>`).join('') || '<tr><td colspan="4" style="color:var(--muted)">Loading…</td></tr>'}</tbody></table></div>`}</div>
+  </div></div>`;
+}
+function openAutoAssign() {
+  const coders = teamCoders(); const un = corpus().filter(a => !assigned(a)).length;
+  modal(`<div class="mh"><div><h2>Assign coders automatically</h2><p class="sub">Spreads the articles evenly, so everyone gets a similar number. Existing assignments stay as they are.</p></div><button class="x" data-act="close" aria-label="Close">×</button></div>
+    <div class="form">
+      <div><b style="font-size:13px">Who codes</b><div class="chips" style="margin-top:6px">${coders.map(m => `<label class="chip" style="display:inline-flex;gap:6px;align-items:center"><input type="checkbox" class="aa-c" value="${esc(m.coder)}" checked style="width:auto">${esc(coderIni(m.coder))}</label>`).join('')}</div></div>
+      <label>Coders per article<input id="aa-n" type="number" min="1" max="${coders.length}" value="${Math.min(3, coders.length)}" style="width:90px"></label>
+      <p class="small">${un} article${un === 1 ? '' : 's'} without coders will be assigned.</p>
+      <div><button class="btn pri" data-act="doautoassign" ${un ? '' : 'disabled'}>Assign</button></div></div>`);
+}
+async function doAutoAssign() {
+  const pick = $$('.aa-c').filter(x => x.checked).map(x => x.value); const n = Math.max(1, Math.min(pick.length, +$('#aa-n').value || 3));
+  if (pick.length < n) { toast('Choose at least ' + n + ' coders.'); return; }
+  const load = {}; pick.forEach(c => load[c] = 0); corpus().forEach(a => (assigned(a) || []).forEach(c => { if (c in load) load[c]++; }));
+  const plan = {}; let rot = 0; const co = {}; pick.forEach(x => { co[x] = {}; pick.forEach(y => co[x][y] = 0); });
+  corpus().forEach(a => { const as = (assigned(a) || []).filter(c => c in load); as.forEach(x => as.forEach(y => { if (x !== y) co[x][y]++; })); });
+  corpus().filter(a => !assigned(a)).forEach(a => {
+    const chosen = [];
+    for (let i = 0; i < n; i++) {
+      const rank = c => load[c] * 1000 + chosen.reduce((t, x) => t + co[c][x], 0) * 10 + ((pick.indexOf(c) - rot + pick.length) % pick.length);
+      const c = pick.filter(c => !chosen.includes(c)).sort((x, y) => rank(x) - rank(y))[0]; chosen.push(c);
+    }
+    chosen.forEach(x => { load[x]++; chosen.forEach(y => { if (x !== y) co[x][y]++; }); });
+    plan[a.key] = chosen.sort((x, y) => x.localeCompare(y, undefined, {numeric:true})); rot = (rot + 1) % pick.length;
+  });
+  if (S.mode === 'shared') { const {error} = await sb.rpc('set_assignments', {assignments:plan}); if (error) { toast('Could not assign: ' + error.message); return; } }
+  Object.entries(plan).forEach(([k, c]) => { S.articles[k].coders = c; }); if (S.mode !== 'shared') persistLocal();
+  closeModal(); toast('Assigned ' + Object.keys(plan).length + ' articles: ' + pick.map(c => coderIni(c) + ' ' + load[c]).join(', ')); renderView();
+}
+
+/* ================= feedback (everyone) ================= */
+function openFeedbackForm() {
+  S.fbKind = S.fbKind || 'bug';
+  modal(`<div class="mh"><div><h2>Send feedback</h2><p class="sub">Goes straight to the project lead. The app adds which article and screen you were on.</p></div><button class="x" data-act="close" aria-label="Close">×</button></div>
+    <div class="form"><div class="seg" role="group" aria-label="Type">${[['bug','Something is broken'],['question','Question'],['idea','Idea']].map(([k, l]) => `<button data-act="fbkind" data-v="${k}" class="${S.fbKind === k ? 'on' : ''}">${l}</button>`).join('')}</div>
+      <label>What happened, or what would help?<textarea id="fbmsg" rows="6" placeholder="${S.fbKind === 'bug' ? 'What did you do, what did you expect, what happened instead?' : 'Write your message'}"></textarea></label>
+      <div><button class="btn pri" data-act="fbsend">Send to the project lead</button></div></div>`);
+  setTimeout(() => { const t = $('#fbmsg'); if (t) t.focus(); }, 30);
+}
+async function sendFeedback() {
+  const msg = $('#fbmsg').value.trim(); if (!msg) { toast('Please write a short message.'); return; }
+  const a = art(S.cur);
+  const context = {view:S.view, article:a ? a.id : '', device:(matchMedia('(pointer: coarse)').matches ? 'touch' : 'desktop') + ' · ' + innerWidth + '×' + innerHeight, browser:navigator.userAgent.slice(0, 200), app:APP_VERSION, sync:S.sync && S.sync.label};
+  if (S.mode !== 'shared') { toast('Feedback works once you are signed in to the shared project.'); return; }
+  const {error} = await sb.from('feedback').insert({kind:S.fbKind, message:msg, context});
+  if (error) { toast('Could not send: ' + error.message); return; }
+  closeModal(); toast('Thank you. Your message is with the project lead.');
+}
 
 /* ================= saving (Supabase) ================= */
 const bkKey = key => 'npf-annotator:backup:' + S.uid + ':' + key;
@@ -1296,11 +1435,18 @@ async function addOne() {
   catch (e) { toast('Could not add the article: ' + (e.message || 'write refused')); }
 }
 async function delArticle(key, confirmed) {
-  if (!confirmed) { const b = $(`[data-act="delart"][data-key="${CSS.escape(key)}"]`); if (b) b.outerHTML = `<button class="btn sm" data-act="delart2" data-key="${esc(key)}" style="color:var(--bad)">Remove with its codings?</button>`; return; }
-  if (S.mode === 'shared') { const {error} = await sb.from('articles').delete().eq('key', key); if (error) { toast('Could not remove it: ' + error.message); return; } }
+  if (!confirmed) { const b = $(`[data-act="delart"][data-key="${CSS.escape(key)}"]`); if (b) b.outerHTML = `<button class="btn sm" data-act="delart2" data-key="${esc(key)}" style="color:var(--bad)">Delete?</button>`; return; }
+  if (S.mode === 'shared') { const {error} = await sb.from('articles').delete().eq('key', key); if (error) { toast(error.code === '23503' ? 'This article already has codings or drafts, so it is protected. Use Archive to hide it instead.' : 'Could not delete it: ' + error.message, 6000); openArticles(); return; } }
   else { delete S.local.articles[key]; persistLocal(); }
   delete S.articles[key]; if (S.cur === key) S.cur = 'practice-en';
   openArticles(); render();
+}
+async function setArchived(key, on) {
+  const a = S.articles[key]; if (!a) return;
+  if (S.mode === 'shared') { const {error} = await sb.from('articles').update({archived:on, updated_at:now()}).eq('key', key); if (error) { toast('Could not change it: ' + error.message); return; } }
+  a.archived = on; if (S.mode !== 'shared') persistLocal();
+  if (on && S.cur === key) S.cur = 'practice-en';
+  toast(on ? 'Archived. Hidden from coders; codings are kept.' : 'Restored.'); openArticles(); renderList(); renderTop();
 }
 async function setAssign(key, v) {
   const a = S.articles[key]; if (!a) return; a.coders = parseCoders(v);
@@ -1321,9 +1467,9 @@ async function fetchAll(table, cols, order) {
   }
   return out;
 }
-const artFromRow = r => ({key:r.key, id:r.id, dataset:r.dataset, url:r.url || '', title:r.title || '', text:r.body || '', ebene:r.ebene || '', coders:r.coders || [], order:r.sort});
+const artFromRow = r => ({key:r.key, id:r.id, dataset:r.dataset, url:r.url || '', title:r.title || '', text:r.body || '', ebene:r.ebene || '', coders:r.coders || [], order:r.sort, archived:!!r.archived});
 const subFromRow = r => ({...(r.data || {}), aid:r.article_key, coder:r.coder, status:'submitted', submittedAt:r.submitted_at, firstSubmittedAt:r.first_submitted_at, revisions:r.revisions || 0, first:r.first_data || null});
-async function loadArticles() { const rows = await fetchAll('articles', 'key,id,dataset,url,title,body,ebene,coders,sort', 'sort'); const m = {}; rows.forEach(r => m[r.key] = artFromRow(r)); S.articles = m; if (S.cur && !art(S.cur)) S.cur = 'practice-en'; }
+async function loadArticles() { const rows = await fetchAll('articles', 'key,id,dataset,url,title,body,ebene,coders,sort,archived', 'sort'); const m = {}; rows.forEach(r => m[r.key] = artFromRow(r)); S.articles = m; if (S.cur && !art(S.cur)) S.cur = 'practice-en'; }
 async function loadMembers() {
   const {data, error} = await sb.from('members').select('*'); if (error) throw error;
   S.members = data;
@@ -1356,6 +1502,7 @@ function subscribeRealtime() {
     .on('postgres_changes', {event:'*', schema:'public', table:'submissions'}, () => later('s', loadSubs))
     .on('postgres_changes', {event:'*', schema:'public', table:'finals'}, () => later('f', loadFinals))
     .on('postgres_changes', {event:'*', schema:'public', table:'members'}, () => later('m', loadMembers))
+    .on('postgres_changes', {event:'*', schema:'public', table:'feedback'}, () => later('fb', loadFeedback))
     .subscribe();
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible' && S.mode === 'shared' && Date.now() - lastSync > 60000) later('all', async () => { await Promise.all([loadMembers(), loadSubs(), loadFinals()]); });
@@ -1413,6 +1560,7 @@ async function enter(session) {
   try { await loadMembers(); await loadArticles(); await Promise.all([loadSubs(), loadFinals(), loadDrafts()]); S.sync = {s:'saved', label:'Connected', msg:'Signed in as ' + S.email}; lastSync = Date.now(); }
   catch (e) { S.sync = {s:'error', label:'Could not load everything', msg:e.message}; }
   if (corpus().length && isPractice(S.cur) && LS.get('npf:practiced', false)) S.cur = (nextKey() || S.cur);
+  if (S.isAdmin) { try { await loadFeedback(); } catch {} } else S.view = 'code';
   subscribeRealtime(); entering = false; render();
   if (!S.coder) toast(S.isAdmin ? 'Give yourself a coder number under Team.' : 'You have no coder number yet. The project lead sets it under Team.', 5000);
 }
