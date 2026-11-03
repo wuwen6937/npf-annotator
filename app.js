@@ -494,27 +494,41 @@ function renderReader() {
   const counts = {}; c.anns.forEach(x => counts[x.cat] = (counts[x.cat] || 0) + 1);
   const others = Object.keys(subsOf(a.key)).filter(u => u !== S.uid).length;
   el.innerHTML = `<div class="rd">
-    <div class="rd-meta"><span class="tag">${esc(a.id)}</span><span>${a.dataset === '1' ? 'Chinese' : 'English'}</span>${a.ebene ? `<span>· Ebene ${esc(a.ebene)}</span>` : ''}${a.url ? `<a href="${esc(a.url)}" target="_blank" rel="noopener">Open source ↗</a>` : ''}${a.practice ? '<span class="pill na">Practice, not part of the corpus</span>' : ''}</div>
+    <div class="rd-meta"><span class="tag">${esc(a.id)}</span><span>${a.dataset === '1' ? 'Chinese' : 'English'}</span>${a.ebene ? `<span>· Ebene ${esc(a.ebene)}</span>` : ''}${metaLine(a)}${a.url ? `<a href="${esc(a.url)}" target="_blank" rel="noopener">Open source ↗</a>` : ''}${a.practice ? '<span class="pill na">Practice, not part of the corpus</span>' : ''}</div>
     <h1 lang="${a.dataset === '1' ? 'zh' : 'en'}">${esc(a.title || a.id)}</h1>
     ${lk ? `<div class="banner good"><span>✓ Submitted ${esc(fmtDate(c.submittedAt))}.${others && isLead() ? ' ' + others + ' other coding' + (others > 1 ? 's' : '') + ' available.' : ' Thank you!'}</span><span style="margin-left:auto;display:flex;gap:8px">${nextKey() ? `<button class="btn sm pri" data-act="next">Next article →</button>` : ''}${others && isLead() ? `<button class="btn sm${nextKey() ? '' : ' pri'}" data-act="gocmp" data-key="${esc(a.key)}">Compare</button>` : ''}<button class="btn sm" data-act="reopen">Edit again</button></span></div>` : ''}
-    ${preCard(c, lk)}
+    ${preTop(c, lk)}
     ${!S.hintOff && !lk && preDone(c) && !screenedOut(c) ? `<div class="hint"><span><b>${matchMedia('(pointer: coarse)').matches ? 'Press and hold a word, drag to cover the passage, then pick a category.' : 'Select words in the text to code them.'}</b> A menu opens with the codebook categories${matchMedia('(pointer: coarse)').matches ? '' : '; each has a shortcut key'}. Click a highlight to change or delete it. Most Yes/No answers on the right fill themselves from what you mark.</span><button data-act="hintoff" aria-label="Hide tip">✕</button></div>` : ''}
     <div class="rd-bar">
       <span style="display:flex;align-items:center;gap:6px" title="Technology and positive/negative turns are tagged to this plot">Plot passages go to <span class="mini-seg"><button data-act="plot" data-v="1" class="${S.plot === 1 ? 'on' : ''}">1</button><button data-act="plot" data-v="2" class="${S.plot === 2 ? 'on' : ''}">2</button></span></span>
       <span class="legend">${CATS.filter(x => counts[x.id]).map(x => `<button class="lg ${S.hidden[x.id] ? 'off' : ''}" style="--c:${x.color}" data-act="lg" data-cat="${x.id}" title="Show or hide"><i></i>${x.short}<b>${counts[x.id]}</b></button>`).join('') || '<span>Nothing marked yet</span>'}</span>
     </div>
     <div id="txt" class="txt ${screenedOut(c) ? 'out' : ''}" lang="${a.dataset === '1' ? 'zh' : 'en'}">${textHTML(a.text, c.anns.filter(x => !S.hidden[x.cat]), c)}</div>
+    ${preBottom(c, lk)}
   </div>`;
 }
-function preCard(c, lk) {
+function metaLine(a) {
+  const m = a.meta || {}; const ks = Object.keys(m);
+  const pick = re => { const k = ks.find(k => re.test(k)); return k ? m[k] : ''; };
+  const parts = [pick(/^(domain|outlet|source|medium|media|quelle|来源|媒体)$/i), pick(/^(author|autor|作者)$/i), pick(/^(published|published at|date|datum|日期|发布时间|publication date)$/i)].filter(Boolean);
+  return parts.length ? `<span>· ${parts.map(esc).join(' · ')}</span>` : '';
+}
+function preTop(c, lk) {
   const done = preDone(c), out = screenedOut(c);
   const ans = k => pv(c, k) === 1 ? 'yes' : pv(c, k) === 0 ? 'no' : '–';
-  if (done && !out && !S.psEdit) return `<div class="ps-line"><span class="step ok">1</span><span><b>Prescreening done:</b> relevant ${ans('p1')} · characters ${ans('p2')} · plot ${ans('p3')}. <span style="color:var(--muted)">Now mark the text.</span></span>${lk ? '' : '<button class="link" data-act="psedit">Change</button>'}</div>`;
+  if (out) return `<div class="ps-line warn"><span class="step">1</span><span><b>Screened out:</b> ${outReason(c)}. No further coding needed.</span><button class="link" data-act="psgo">See the answers</button></div>`;
+  if (done && !S.psEdit) return `<div class="ps-line"><span class="step ok">1</span><span><b>Prescreening done:</b> relevant ${ans('p1')} · characters ${ans('p2')} · plot ${ans('p3')}. <span style="color:var(--muted)">Now mark the text.</span></span>${lk ? '' : '<button class="link" data-act="psedit">Change</button>'}</div>`;
+  if (done) return '';
+  return `<div class="ps-line todo"><span class="step">1</span><span><b>Step 1: read the whole text.</b> Then answer the three prescreening questions at the end of the text. Marking opens after that.</span><button class="link" data-act="psgo">Go to the questions ↓</button></div>`;
+}
+function preBottom(c, lk) {
+  const done = preDone(c), out = screenedOut(c);
+  if (done && !out && !S.psEdit) return '';
   return `<section class="prescreen ${out ? 'out' : ''}" id="prescreen" aria-label="Step 1: Prescreening">
-    <div class="ps-h"><span class="step">1</span><div><b>Start with the prescreening</b><p>${out ? '' : 'Read the whole text once, then answer these three questions. Marking the text opens once they are answered.'}</p></div><button class="q" data-act="def" data-def="8" aria-label="About the prescreening">?</button></div>
+    <div class="ps-h"><span class="step">1</span><div><b>Prescreening</b><p>${out ? 'Your answers screen this text out.' : 'You have read the text. Is it eligible for coding?'}</p></div><button class="q" data-act="def" data-def="8" aria-label="About the prescreening">?</button></div>
     ${PRE.map(k => fieldHTML(c, FM[k], lk)).join('')}
     ${out ? `<div class="ps-out"><b>No further coding needed:</b> ${outReason(c)}. Your answers are enough for this article.${lk ? '' : ` <span class="ps-act"><button class="btn sm pri" data-act="submit">Submit prescreening</button></span>`}</div>`
-      : done ? `<div class="ps-ok"><b>The text passes.</b> Continue with the full coding: select passages to mark them. <button class="btn sm pri" data-act="psclose">Start marking</button></div>` : ''}
+      : done ? `<div class="ps-ok"><b>The text passes.</b> Continue with the full coding. <button class="btn sm pri" data-act="psclose">Start marking</button></div>` : ''}
   </section>`;
 }
 function textHTML(text, anns, c) {
@@ -592,7 +606,7 @@ function renderPanel() {
     return `<div class="sec"><div class="sec-h">${esc(sec)}<button class="q" data-act="def" data-def="${SEC_DEF[sec]}" aria-label="Definition">?</button></div>${inner}</div>`;
   }).join('');
   const gate = out ? `<div class="sec"><div class="ps-out" style="margin:4px 0 0"><b>Screened out:</b> ${outReason(c)}. Nothing else to code for this article.</div></div>`
-    : !pre ? `<div class="sec"><p class="small" style="margin:4px 0 0">The rest of the coding sheet opens after the three prescreening questions.</p></div>` : '';
+    : !pre ? `<div class="sec"><p class="small" style="margin:4px 0 0">Read the whole text first, then answer the prescreening (here or at the end of the text). The rest of the coding sheet opens after that.</p></div>` : '';
   el.innerHTML = `<div class="pn-h"><b style="font-size:13px">Coding sheet</b><div class="prog" title="${Math.round(p * 100)}% complete"><i style="width:${p * 100}%"></i></div><span class="tag">${open.length ? open.length + ' open' : 'complete'}</span></div>
     <div class="pn-b">${body}${gate}
       ${out || !pre ? '' : `<div class="sec"><div class="sec-h">Narrative summary<button class="q" data-act="def" data-def="49" aria-label="Definition">?</button></div>
@@ -640,7 +654,7 @@ function checkSel() {
   if (locked(S.cur)) { toast('This coding is submitted. Choose “Edit again” to change it.'); return; }
   { const c0 = draft(S.cur);
     if (screenedOut(c0)) { toast('This text is screened out, so no marks are needed. Change the prescreening if that was a mistake.', 4500); return; }
-    if (!preDone(c0)) { toast('First answer the three prescreening questions above the text.', 4000); const ps = $('#prescreen'); if (ps) { ps.scrollIntoView({block:'start', behavior:'smooth'}); ps.classList.remove('nudge'); void ps.offsetWidth; ps.classList.add('nudge'); } return; } }
+    if (!preDone(c0)) { toast('First read to the end and answer the three prescreening questions below the text.', 4500); const ps = $('#prescreen'); if (ps) { ps.scrollIntoView({block:'start', behavior:'smooth'}); ps.classList.remove('nudge'); void ps.offsetWidth; ps.classList.add('nudge'); } return; } }
   S.sel = {s, e, t:text.slice(s, e)};
   showTagMenu(r.getBoundingClientRect());
 }
@@ -1023,7 +1037,10 @@ function individualSheets() {
   });
   return [['Results', res(cur), [12, 8, 8, 30]], ['Results (independent)', res(first), [12, 8, 8, 30]], ['Characters', chars], ['Passages', pas, [12, 7, 7, 26, 5, 22, 60]], ['Memos', memos], ['Articles', articlesSheet()]];
 }
-function articlesSheet() { return [['Article ID','Dataset','Ebene','URL','Title','Assigned coders','Submitted codings'], ...corpus().map(a => [a.id, a.dataset, a.ebene || '', a.url || '', a.title || '', (assigned(a) || []).join(','), Object.keys(subsOf(a.key)).length])]; }
+function articlesSheet() {
+  const mk = [...new Set(allArticles().flatMap(a => Object.keys(a.meta || {})))];
+  return [['Article ID','Dataset','Ebene','URL','Title','Assigned coders','Submitted codings','Archived', ...mk], ...allArticles().map(a => [a.id, a.dataset, a.ebene || '', a.url || '', a.title || '', (assigned(a) || []).join(','), Object.keys(subsOf(a.key)).length, a.archived ? 1 : 0, ...mk.map(k => (a.meta || {})[k] || '')])];
+}
 function consensusSheets() {
   const arts = corpus().filter(a => Object.keys(subsOf(a.key)).length);
   const rows = [CB.headers, CB.legend]; const ag = [['Article ID','Variable','Coders','Values','Agreement','Consensus','Source']];
@@ -1097,12 +1114,11 @@ async function pickCoder(code, then) {
 }
 
 /* ---------- articles admin ---------- */
-let importBuf = [];
 function openArticles() {
-  importBuf = [];
+  importState = {sheets:[], direct:[], backup:null};
   const list = allArticles();
   modal(`<div class="mh"><div><h2>Articles</h2><p class="sub">${corpus().length} in the corpus${list.length > corpus().length ? ', ' + (list.length - corpus().length) + ' archived' : ''}. Codings stay attached when you re-import an article with the same ID. Articles with codings can only be archived, never deleted.</p></div><button class="x" data-act="close" aria-label="Close">×</button></div>
-    <div class="drop" id="drop"><b>Drop files here</b> or <label class="link" style="cursor:pointer">choose files<input type="file" id="fileIn" multiple accept=".xlsx,.xls,.csv,.txt,.docx,.json" hidden></label><div style="font-size:12.5px;margin-top:6px">Excel/CSV with one article per row (columns like <i>Article ID, Dataset, URL, Title, Text, Coders, Ebene</i>) · .docx or .txt, one article per file (file name = ID) · a backup .json</div></div>
+    <div class="drop" id="drop"><b>Drop files here</b> or <label class="link" style="cursor:pointer">choose files<input type="file" id="fileIn" multiple accept=".xlsx,.xls,.csv,.txt,.docx,.json" hidden></label><div style="font-size:12.5px;margin-top:6px">Excel or CSV with one article per row: any layout, headings in English, German or Chinese, title rows above the table are fine. You can check and change which column is which before importing. · Word or text files, one article per file (file name = ID) · a backup .json</div></div>
     <div id="imp"></div>
     <details style="margin-top:14px"><summary class="link" style="cursor:pointer">Paste a single article</summary>
       <div class="form" style="margin-top:10px">
@@ -1119,25 +1135,109 @@ function openArticles() {
   drop.ondragleave = () => drop.classList.remove('over');
   drop.ondrop = e => { e.preventDefault(); drop.classList.remove('over'); readFiles([...e.dataTransfer.files]); };
 }
-const normDs = (v, text) => { const s = String(v || '').trim().toLowerCase(); if (['1','cn','zh','chinese','中文'].includes(s)) return '1'; if (['2','en','english'].includes(s)) return '2'; return isCJK(text || '') ? '1' : '2'; };
+const normDs = (v, text) => { const s = String(v || '').trim().toLowerCase(); if (['1','cn','zh','chinese','中文'].includes(s)) return '1'; if (['2','en','english','英文','英语','englisch','en-us','en-gb'].includes(s)) return '2'; return isCJK(text || '') ? '1' : '2'; };
 const parseCoders = v => String(v || '').split(/[,;\s]+/).map(x => x.trim()).filter(x => /^\d+$/.test(x));
-function pickCol(row, names) { const ks = Object.keys(row); for (const n of names) { const k = ks.find(k => k.toLowerCase().replace(/\(.*?\)/g, '').trim() === n); if (k) return row[k]; } for (const n of names) { const k = ks.find(k => k.toLowerCase().includes(n)); if (k) return row[k]; } return ''; }
+/* ---------- flexible import: finds the heading row and the right columns in any sheet ---------- */
+const IMP_FIELDS = [
+  ['id', 'Article ID', true], ['text', 'Article text', true], ['title', 'Title', false], ['url', 'URL', false],
+  ['dataset', 'Dataset / language', false], ['coders', 'Assigned coders', false], ['ebene', 'Ebene', false]
+];
+const SYN = {
+  id:['article id','articleid','article no','article number','article nr','id','nr','no','number','unique number','unique id','doc id','document id','编号','序号','文章编号','文章id','artikel id','artikel-id','artikelnummer','laufnummer','lfd nr','lfd. nr'],
+  text:['article text','text','full text','fulltext','content','body','article body','article content','main text','正文','内容','全文','文本','新闻内容','volltext','inhalt','artikeltext','haupttext'],
+  title:['title','headline','heading','article title','标题','题目','新闻标题','titel','überschrift','schlagzeile'],
+  url:['url','link','article url','web address','网址','链接','原文链接','quelle','quell-url'],
+  dataset:['dataset','language','lang','corpus','sample','语言','语种','数据集','sprache','datensatz','korpus'],
+  coders:['coders','coder','assigned','assigned coders','kodierer','codierer','kodierende'],
+  ebene:['ebene','level','layer','层级','层次']
+};
+const PARTIAL = {text:['text','content','正文','inhalt'], title:['title','headline','标题','titel'], url:['url','link'], id:[' id','id ','编号']};
+const normH = h => String(h ?? '').toLowerCase().replace(/\(.*?\)|（.*?）/g, '').replace(/[_\s]+/g, ' ').replace(/[:：]$/, '').trim();
+const cellStr = v => { if (v == null) return ''; if (v instanceof Date) return v.toISOString().slice(0, 10); if (typeof v === 'number' && Number.isInteger(v)) return String(v); return String(v).trim(); };
+function headerScore(row) { return row.reduce((n, c) => n + (Object.values(SYN).some(l => l.includes(normH(c))) ? 1 : 0), 0); }
+function findHeaderRow(aoa) {
+  let best = -1, sc = 0;
+  for (let i = 0; i < Math.min(40, aoa.length); i++) { const s = headerScore(aoa[i]); if (s > sc) { sc = s; best = i; } }
+  if (best >= 0) return best;
+  for (let i = 0; i < Math.min(40, aoa.length); i++) if (aoa[i].filter(c => cellStr(c)).length >= 2) return i;
+  return 0;
+}
+function guessMap(aoa, h) {
+  const head = (aoa[h] || []).map(normH), data = aoa.slice(h + 1).filter(r => r.some(c => cellStr(c)));
+  const map = {}; const used = new Set();
+  for (const [f] of IMP_FIELDS) { const i = head.findIndex((x, j) => !used.has(j) && SYN[f].includes(x)); if (i >= 0) { map[f] = i; used.add(i); } }
+  for (const f of Object.keys(PARTIAL)) if (map[f] == null) { const i = head.findIndex((x, j) => !used.has(j) && x && PARTIAL[f].some(p => (' ' + x + ' ').includes(p))); if (i >= 0) { map[f] = i; used.add(i); } }
+  const cols = Math.max(0, ...aoa.slice(h, h + 50).map(r => r.length));
+  const stat = j => { const vs = data.slice(0, 200).map(r => cellStr(r[j])).filter(Boolean); const avg = vs.length ? vs.reduce((n, v) => n + v.length, 0) / vs.length : 0; return {vs, avg, http:vs.filter(v => /^https?:\/\//i.test(v)).length / Math.max(1, vs.length), uniq:new Set(vs).size === vs.length}; };
+  if (map.text == null) { let b = -1, ba = 150; for (let j = 0; j < cols; j++) { if (used.has(j)) continue; const s = stat(j); if (s.avg > ba) { ba = s.avg; b = j; } } if (b >= 0) { map.text = b; used.add(b); } }
+  if (map.url == null) { for (let j = 0; j < cols; j++) { if (used.has(j)) continue; if (stat(j).http > .6) { map.url = j; used.add(j); break; } } }
+  if (map.id == null) { for (let j = 0; j < cols; j++) { if (used.has(j) || isDateHead(head[j] || '')) continue; const s = stat(j); if (s.vs.length && s.uniq && s.avg < 25 && s.http < .1 && !/^\d{5}(\.\d+)?$/.test(s.vs[0])) { map.id = j; used.add(j); break; } } }
+  if (map.title == null) { for (let j = 0; j < cols; j++) { if (used.has(j)) continue; const s = stat(j); if (s.avg > 8 && s.avg < 250 && s.http < .1 && s.vs.length > data.length * .5 && !/date|time|datum|日期|时间|author|作者|autor/.test(head[j] || '')) { map.title = j; used.add(j); break; } } }
+  return map;
+}
+const isDateHead = h => /date|published|captured|time|datum|日期|时间|veröffentlicht/i.test(h);
+const excelDate = n => { const d = new Date(Date.UTC(1899, 11, 30) + n * 864e5); return d.toISOString().slice(0, 10); };
+function sheetArticles(sh) {
+  const {aoa, hdr, map} = sh; const head = aoa[hdr] || []; const out = []; const mapped = new Set(Object.values(map).filter(v => v != null && v >= 0));
+  aoa.slice(hdr + 1).forEach((r, i) => {
+    if (!r.some(c => cellStr(c))) return;
+    const g = f => map[f] == null || map[f] < 0 ? '' : cellStr(r[map[f]]);
+    const text = g('text'); if (!text) return;
+    let id = g('id'); if (!id) id = sh.file.replace(/\.[^.]+$/, '').replace(/\s+/g, '_') + (importState.sheets.filter(x => x.file === sh.file).length > 1 ? '_' + sh.name.replace(/\s+/g, '_') : '') + '-' + (i + 1);
+    const meta = {};
+    head.forEach((hh, j) => { if (mapped.has(j)) return; const name = cellStr(hh) || 'Column ' + (j + 1); let v = r[j]; if (v == null || v === '') return;
+      if (typeof v === 'number' && isDateHead(name) && v > 20000 && v < 80000) v = excelDate(v); else v = cellStr(v);
+      if (v) meta[name] = v; });
+    out.push({id, text, title:g('title'), url:g('url'), dataset:normDs(g('dataset'), text), coders:parseCoders(g('coders')), ebene:g('ebene'), meta, order:i});
+  });
+  return out;
+}
+function importArticles() { return [...importState.sheets.filter(s => s.on).flatMap(sheetArticles), ...importState.direct]; }
+let importState = {sheets:[], direct:[], backup:null};
 async function readFiles(files) {
-  const out = [];
   for (const f of files) {
     const ext = f.name.split('.').pop().toLowerCase(), base = f.name.replace(/\.[^.]+$/, '');
     try {
-      if (ext === 'json') { const d = JSON.parse(await f.text()); if (d.articles) Object.values(d.articles).forEach(a => out.push({...a})); if (d.subs && S.mode !== 'shared') { importBuf.backup = d; } }
-      else if (ext === 'txt') { const t = await f.text(); out.push({id:base, text:t.trim(), dataset:normDs('', t)}); }
-      else if (ext === 'docx') { if (typeof mammoth === 'undefined') throw new Error('Word reader did not load'); const r = await mammoth.extractRawText({arrayBuffer:await f.arrayBuffer()}); const t = r.value.trim(); out.push({id:base, text:t, dataset:normDs('', t)}); }
-      else { const wb = XLSX.read(await f.arrayBuffer(), {type:'array'}); const ws = wb.Sheets[wb.SheetNames[0]]; const rows = XLSX.utils.sheet_to_json(ws, {defval:''});
-        rows.forEach(r => { const text = String(pickCol(r, ['text','content','body','fulltext','article text','article'])).trim(); const id = String(pickCol(r, ['article id','id','article','unique number'])).trim(); if (!text || !id) return;
-          out.push({id, text, dataset:normDs(pickCol(r, ['dataset','language','lang']), text), url:String(pickCol(r, ['url','link','source'])), title:String(pickCol(r, ['title','headline','heading'])), ebene:String(pickCol(r, ['ebene','level'])), coders:parseCoders(pickCol(r, ['coders','coder','assigned']))}); }); }
+      if (ext === 'json') { const d = JSON.parse(await f.text()); if (d.articles) Object.values(d.articles).forEach(a => importState.direct.push({...a})); if (d.subs && S.mode !== 'shared') importState.backup = d; }
+      else if (ext === 'txt' || ext === 'md') { const t = (await f.text()).trim(); importState.direct.push({id:base, text:t, dataset:normDs('', t)}); }
+      else if (ext === 'docx') { if (typeof mammoth === 'undefined') throw new Error('the Word reader did not load'); const r = await mammoth.extractRawText({arrayBuffer:await f.arrayBuffer()}); const t = r.value.trim(); importState.direct.push({id:base, text:t, dataset:normDs('', t)}); }
+      else {
+        const wb = XLSX.read(await f.arrayBuffer(), {type:'array', cellDates:false});
+        wb.SheetNames.forEach(n => {
+          const aoa = XLSX.utils.sheet_to_json(wb.Sheets[n], {header:1, defval:'', raw:true, blankrows:true});
+          if (!aoa.length) return;
+          const hdr = findHeaderRow(aoa); const map = guessMap(aoa, hdr);
+          importState.sheets.push({file:f.name, name:n, aoa, hdr, map, on:map.text != null});
+        });
+      }
     } catch (e) { toast('Could not read ' + f.name + ': ' + (e.message || e)); }
   }
-  importBuf.push(...out);
-  const exist = importBuf.filter(a => S.articles[keyOf(a.id)]).length;
-  $('#imp').innerHTML = importBuf.length ? `<div class="banner good" style="margin-top:12px"><span><b>${importBuf.length}</b> article${importBuf.length > 1 ? 's' : ''} ready (${importBuf.filter(a => a.dataset === '1').length} CN · ${importBuf.filter(a => a.dataset === '2').length} EN)${exist ? ` · ${exist} already exist and will be updated` : ''}${importBuf.backup ? ' · backup codings will be restored in this browser' : ''}.</span><button class="btn pri sm" data-act="doimport" style="margin-left:auto">Import</button></div>` : `<div class="banner warn" style="margin-top:12px">No article found. Check that the file has an ID and a text column.</div>`;
+  if (!importState.sheets.some(s => s.on) && importState.sheets.length) importState.sheets[0].on = true;
+  renderImport();
+}
+function renderImport() {
+  const el = $('#imp'); if (!el) return;
+  const list = importArticles();
+  if (!importState.sheets.length && !list.length) { el.innerHTML = ''; return; }
+  const ids = list.map(a => String(a.id)); const dup = ids.filter((x, i) => ids.indexOf(x) !== i);
+  const short = list.filter(a => a.text.length < 200);
+  const exist = list.filter(a => S.articles[keyOf(a.id)]).length;
+  const sheetBox = importState.sheets.map((sh, si) => {
+    const head = sh.aoa[sh.hdr] || []; const cols = Math.max(...sh.aoa.slice(sh.hdr, sh.hdr + 50).map(r => r.length));
+    const opt = (f, req) => `<select data-impmap="${f}" data-si="${si}" aria-label="${f}"><option value="-1">${f === 'id' ? '— number the rows —' : f === 'dataset' ? '— detect from the text —' : '— not in this sheet —'}</option>${Array.from({length:cols}, (_, j) => `<option value="${j}" ${sh.map[f] === j ? 'selected' : ''}>${esc(cellStr(head[j]) || 'Column ' + (j + 1))}</option>`).join('')}</select>`;
+    const n = sh.on ? sheetArticles(sh).length : 0;
+    return `<div class="card" style="padding:12px 14px;margin-top:10px">
+      <label style="display:flex;gap:8px;align-items:center;font-weight:600"><input type="checkbox" data-impsheet="${si}" ${sh.on ? 'checked' : ''} style="width:auto"> ${esc(sh.file)} · sheet “${esc(sh.name)}” <span class="tag" style="margin-left:auto">${n} article${n === 1 ? '' : 's'}</span></label>
+      ${sh.on ? `<div class="small">Headings found in row ${sh.hdr + 1}. <label style="display:inline-flex;gap:6px;align-items:center">Use row <input type="number" min="1" max="${Math.min(40, sh.aoa.length)}" value="${sh.hdr + 1}" data-imphdr="${si}" style="width:64px;padding:2px 6px"> as headings</label></div>
+        <div class="row2" style="margin-top:6px">${IMP_FIELDS.map(([f, l, req]) => `<label style="display:grid;gap:3px;font-size:12px;color:var(--muted);font-weight:500">${l}${req ? ' *' : ''}${opt(f, req)}</label>`).join('')}</div>
+        <p class="small">All other columns are kept with each article (shown in the article header and in exports).</p>` : ''}</div>`;
+  }).join('');
+  const prev = list.slice(0, 3).map(a => `<tr><td class="n" style="text-align:left">${esc(a.id)}</td><td>${a.dataset === '1' ? 'CN' : 'EN'}</td><td>${esc((a.title || '').slice(0, 50))}</td><td style="color:var(--muted)">${esc(a.text.slice(0, 70))}…</td></tr>`).join('');
+  el.innerHTML = `${sheetBox}
+    ${list.length ? `<div class="tw" style="margin-top:10px"><table><thead><tr><th>ID</th><th>Data</th><th>Title</th><th>Text</th></tr></thead><tbody>${prev}</tbody></table></div>` : ''}
+    ${dup.length ? `<div class="banner warn" style="margin-top:10px">${dup.length} duplicate ID${dup.length > 1 ? 's' : ''} (${esc([...new Set(dup)].slice(0, 5).join(', '))}). Only the last one of each would be kept: check the ID column.</div>` : ''}
+    ${short.length ? `<div class="banner warn" style="margin-top:10px">${short.length} article${short.length > 1 ? 's have' : ' has'} very little text (under 200 characters): ${esc(short.slice(0, 8).map(a => a.id).join(', '))}${short.length > 8 ? '…' : ''}. The scraping may have failed for ${short.length > 1 ? 'them' : 'it'}.</div>` : ''}
+    <div class="banner ${list.length ? 'good' : 'warn'}" style="margin-top:10px"><span>${list.length ? `<b>${list.length}</b> article${list.length > 1 ? 's' : ''} ready (${list.filter(a => a.dataset === '1').length} CN · ${list.filter(a => a.dataset === '2').length} EN)${exist ? ` · ${exist} already exist and will be updated, their codings stay` : ''}${importState.backup ? ' · backup codings will be restored in this browser' : ''}.` : 'No article found yet. Choose the column that holds the article text.'}</span>${list.length ? `<button class="btn pri sm" data-act="doimport" style="margin-left:auto">Import ${list.length}</button>` : ''}</div>`;
 }
 
 /* ================= events ================= */
@@ -1161,8 +1261,9 @@ document.addEventListener('click', async e => {
     case 'open': S.cur = d.key; S.undo = []; S.hidden = {}; S.psEdit = false; S.psWasDone = preDone(draft(d.key)); renderList(); renderReader(); renderPanel(); $('#reader').scrollTop = 0; if (isPhone()) setPane('text'); break;
     case 'next': { const k = nextKey(); if (k) { S.cur = k; S.undo = []; S.hidden = {}; render(); $('#reader').scrollTop = 0; if (isPhone()) setPane('text'); } break; }
     case 'mpane': setPane(d.v); break;
-    case 'psedit': S.psEdit = true; renderReader(); break;
+    case 'psedit': S.psEdit = true; renderReader(); setTimeout(() => { const ps = $('#prescreen'); if (ps) ps.scrollIntoView({block:'center', behavior:'smooth'}); }, 30); break;
     case 'psclose': S.psEdit = false; renderReader(); if (isPhone()) setPane('text'); break;
+    case 'psgo': { if (isPhone()) setPane('text'); const ps = $('#prescreen'); if (ps) ps.scrollIntoView({block:'center', behavior:'smooth'}); break; }
     case 'feedback': openFeedbackForm(); break;
     case 'fbkind': S.fbKind = d.v; $$('[data-act="fbkind"]').forEach(b => b.classList.toggle('on', b.dataset.v === d.v)); break;
     case 'fbsend': sendFeedback(); break;
@@ -1237,6 +1338,9 @@ document.addEventListener('change', e => {
   if (t.dataset.act === 'leadview') { S.leadView = t.checked; LS.set('npf:leadView', t.checked); if (t.checked) toast('Lead view on. Code your own articles before you look at them here.', 4000); renderView(); return; }
   if (t.dataset.act === 'anf') { S.an[t.dataset.f] = t.value; renderView(); }
   if (t.dataset.assign) setAssign(t.dataset.assign, t.value);
+  if (t.dataset.impmap) { const sh = importState.sheets[+t.dataset.si]; const v = +t.value; for (const k in sh.map) if (sh.map[k] === v && k !== t.dataset.impmap && v >= 0) sh.map[k] = -1; sh.map[t.dataset.impmap] = v; renderImport(); }
+  if (t.dataset.impsheet) { importState.sheets[+t.dataset.impsheet].on = t.checked; renderImport(); }
+  if (t.dataset.imphdr) { const sh = importState.sheets[+t.dataset.imphdr]; sh.hdr = Math.max(0, (+t.value || 1) - 1); sh.map = guessMap(sh.aoa, sh.hdr); renderImport(); }
   if (t.dataset.team) teamUpdate(t.dataset.email, {[t.dataset.team]:t.value || null});
   if (t.id === 'finsum') saveFinal(t.dataset.key, {summary:t.value});
 });
@@ -1277,7 +1381,7 @@ document.addEventListener('scroll', e => { if (e.target === $('#pop')) return; i
 
 
 /* ================= roles ================= */
-const APP_VERSION = '2026-11-03c';
+const APP_VERSION = '2026-11-03e';
 const isLead = () => S.mode !== 'shared' || S.isAdmin;
 function allArticles() { return Object.values(S.articles).sort((a, b) => (a.order ?? 1e9) - (b.order ?? 1e9) || String(a.id).localeCompare(String(b.id), undefined, {numeric:true})); }
 function myQueue() { return corpus().filter(a => { const as = assigned(a); return !as || as.includes(String(S.coder)); }); }
@@ -1441,9 +1545,9 @@ async function saveFile(filename, data) {
 function buildArticle(a, i) {
   const key = keyOf(a.id); const prev = S.articles[key] || {};
   return {id:String(a.id), key, dataset:a.dataset || normDs('', a.text), url:a.url || '', title:a.title || '', text:a.text, ebene:a.ebene || '',
-    coders:a.coders && a.coders.length ? a.coders.map(String) : (prev.coders || []), order:prev.order ?? a.order ?? (Date.now() + (i || 0))};
+    coders:a.coders && a.coders.length ? a.coders.map(String) : (prev.coders || []), order:prev.order ?? a.order ?? (Date.now() + (i || 0)), meta:a.meta || prev.meta || {}, archived:!!prev.archived};
 }
-const artRow = a => ({key:a.key, id:a.id, dataset:a.dataset, url:a.url, title:a.title, body:a.text, ebene:a.ebene, coders:a.coders, sort:a.order, updated_at:now()});
+const artRow = a => ({key:a.key, id:a.id, dataset:a.dataset, url:a.url, title:a.title, body:a.text, ebene:a.ebene, coders:a.coders, sort:a.order, meta:a.meta || {}, updated_at:now()});
 async function putArticles(list) {
   const byKey = new Map(); list.forEach((a, i) => { const d = buildArticle(a, i); byKey.set(d.key, d); });
   const docs = [...byKey.values()];
@@ -1454,9 +1558,9 @@ async function putArticles(list) {
   return docs.length;
 }
 async function doImport() {
-  const bk = importBuf.backup; let n = 0;
+  const bk = importState.backup; let n = 0;
   setSync('saving');
-  try { n = await putArticles(importBuf.slice()); }
+  try { n = await putArticles(importArticles()); }
   catch (e) { setSync('error', e && e.message); toast('Import stopped: ' + (e.message || 'write refused')); return; }
   if (bk && S.mode !== 'shared') { Object.assign(S.local.subs, bk.subs || {}); Object.assign(S.local.profiles, bk.profiles || {}); Object.assign(S.local.finals, bk.finals || {}); S.subs = S.local.subs; S.profiles = S.local.profiles; S.finals = S.local.finals; persistLocal(); }
   setSync('saved'); toast('Imported ' + n + ' article' + (n === 1 ? '' : 's') + '.'); closeModal(); render();
@@ -1500,9 +1604,9 @@ async function fetchAll(table, cols, order) {
   }
   return out;
 }
-const artFromRow = r => ({key:r.key, id:r.id, dataset:r.dataset, url:r.url || '', title:r.title || '', text:r.body || '', ebene:r.ebene || '', coders:r.coders || [], order:r.sort, archived:!!r.archived});
+const artFromRow = r => ({key:r.key, id:r.id, dataset:r.dataset, url:r.url || '', title:r.title || '', text:r.body || '', ebene:r.ebene || '', coders:r.coders || [], order:r.sort, archived:!!r.archived, meta:r.meta || {}});
 const subFromRow = r => ({...(r.data || {}), aid:r.article_key, coder:r.coder, status:'submitted', submittedAt:r.submitted_at, firstSubmittedAt:r.first_submitted_at, revisions:r.revisions || 0, first:r.first_data || null});
-async function loadArticles() { const rows = await fetchAll('articles', 'key,id,dataset,url,title,body,ebene,coders,sort,archived', 'sort'); const m = {}; rows.forEach(r => m[r.key] = artFromRow(r)); S.articles = m; if (S.cur && !art(S.cur)) S.cur = 'practice-en'; }
+async function loadArticles() { const rows = await fetchAll('articles', 'key,id,dataset,url,title,body,ebene,coders,sort,archived,meta', 'sort'); const m = {}; rows.forEach(r => m[r.key] = artFromRow(r)); S.articles = m; if (S.cur && !art(S.cur)) S.cur = 'practice-en'; }
 async function loadMembers() {
   const {data, error} = await sb.from('members').select('*'); if (error) throw error;
   S.members = data;

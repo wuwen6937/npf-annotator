@@ -340,3 +340,7 @@ do $$ begin
     alter publication supabase_realtime add table public.feedback;
   end if;
 end $$;
+
+-- ================================================================ article metadata (2026-11-03)
+-- every extra column of an imported sheet (domain, author, publication date, …) is kept here
+alter table public.articles add column if not exists meta jsonb not null default '{}'::jsonb;

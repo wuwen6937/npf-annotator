@@ -309,3 +309,6 @@ img{max-width:100%}
 .ps-line .link{margin-left:auto}
 .txt.out{opacity:.55}
 .pcd.done.out{background:var(--faint);border-color:var(--faint)}
+.ps-line.todo{background:var(--accent-soft)}
+.ps-line.warn{background:var(--warn-soft)}
+.prescreen{margin:22px 0 8px}
