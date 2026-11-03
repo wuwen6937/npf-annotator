@@ -6,7 +6,7 @@ const DEF = i => CB.defs[i] || ['', ''];
 /* ================= constants ================= */
 const CODERS = [
   {code:'1', ini:'KSK'}, {code:'2', ini:'WW'}, {code:'3', ini:'MS'},
-  {code:'4', ini:'HR'}, {code:'5', ini:'GJL'}, {code:'6', ini:'AD'}
+  {code:'4', ini:'HR'}, {code:'5', ini:'GJL'}, {code:'6', ini:'AD'}, {code:'7', ini:'CC'}
 ];
 const CATS = [
   {id:'xi',      short:'Xi quote',      label:'Xi Jinping quoted',                     key:'x', grp:'Ideology',   color:'#c2410c', def:14},

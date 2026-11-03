@@ -188,7 +188,7 @@ end $$;
 -- ---------------------------------------------------------------- first project lead
 -- Replace the email if you sign in with a different address. Add everyone else in the app (Team).
 insert into public.members (email, coder, role)
-values ('wutao.wen@googlemail.com', '2', 'lead')
+values ('wen@uni-trier.de', '2', 'lead')
 on conflict (email) do update set role = 'lead';
 
 -- ---------------------------------------------------------------- hardening (applied 2026-11-03)
