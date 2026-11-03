@@ -15,11 +15,11 @@ Coding stays blind: a coder can see other coders' work on an article only after 
 
 ## Setup (one time)
 
-1. **Supabase**: create a project, open *SQL Editor*, paste [`supabase/schema.sql`](supabase/schema.sql) and run it. The last line makes you the project lead; change the email there if needed.
+1. **Supabase** (done for project `npf-annotator`, Frankfurt): create a project, open *SQL Editor*, paste [`supabase/schema.sql`](supabase/schema.sql) and run it. The last line makes you the project lead; change the email there if needed.
 2. **Supabase → Authentication → URL Configuration**: set *Site URL* to the GitHub Pages address (for example `https://wuwen6937.github.io/npf-annotator/`) and add the same address under *Redirect URLs*.
 3. **Supabase → Authentication → Emails → Magic Link** (optional, recommended): add `{{ .Token }}` to the template, so the email also contains a code. This helps when someone opens the email on a different device from the one they're signing in on.
 4. **Email sending** (recommended for a team): Supabase's built-in email service only sends a few emails per hour. Under *Authentication → Emails → SMTP Settings*, connect a free sender such as Brevo or Resend.
-5. **`config.js`**: paste the project URL and the *anon public* key from *Project Settings → API*. The anon key is meant to be public; the database rules decide who can read and write what.
+5. **`config.js`** (done): paste the project URL and the *anon public* key from *Project Settings → API*. The anon key is meant to be public; the database rules decide who can read and write what.
 6. **GitHub → Settings → Pages**: *Deploy from a branch*, branch `main`, folder `/ (root)`.
 
 Without `config.js` filled in, the app opens in practice mode, which saves to the current browser only.

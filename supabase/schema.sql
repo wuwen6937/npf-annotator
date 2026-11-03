@@ -65,7 +65,7 @@ create table if not exists public.finals (
 
 -- ---------------------------------------------------------------- helpers
 create or replace function public.current_email() returns text
-language sql stable as $$ select lower(coalesce(auth.jwt() ->> 'email', '')) $$;
+language sql stable set search_path = public as $$ select lower(coalesce(auth.jwt() ->> 'email', '')) $$;
 
 create or replace function public.is_member() returns boolean
 language sql stable security definer set search_path = public as $$
@@ -172,6 +172,7 @@ create policy finals_read  on public.finals for select to authenticated using (i
 create policy finals_write on public.finals for all    to authenticated using (is_lead()) with check (is_lead());
 
 revoke all on public.members, public.articles, public.drafts, public.submissions, public.submission_history, public.finals from anon;
+revoke execute on function public.claim_membership() from anon;
 
 -- ---------------------------------------------------------------- live updates
 do $$
@@ -189,3 +190,48 @@ end $$;
 insert into public.members (email, coder, role)
 values ('wutao.wen@googlemail.com', '2', 'lead')
 on conflict (email) do update set role = 'lead';
+
+-- ---------------------------------------------------------------- hardening (applied 2026-11-03)
+revoke execute on function public.claim_membership(), public.has_submitted(text), public.is_lead(), public.is_member(), public.current_email(), public.submissions_before(), public.submissions_after() from public, anon;
+revoke execute on function public.submissions_before(), public.submissions_after() from authenticated;
+grant execute on function public.claim_membership(), public.has_submitted(text), public.is_lead(), public.is_member(), public.current_email() to authenticated;
+
+create index if not exists drafts_article_key_idx on public.drafts(article_key);
+create index if not exists submissions_article_key_idx on public.submissions(article_key);
+
+-- one policy per action, auth calls evaluated once per query
+drop policy if exists members_write on public.members;   drop policy if exists members_read on public.members;
+drop policy if exists members_insert on public.members;  drop policy if exists members_update on public.members;  drop policy if exists members_delete on public.members;
+create policy members_read   on public.members for select to authenticated using ((select is_member()));
+create policy members_insert on public.members for insert to authenticated with check ((select is_lead()));
+create policy members_update on public.members for update to authenticated using ((select is_lead())) with check ((select is_lead()));
+create policy members_delete on public.members for delete to authenticated using ((select is_lead()));
+
+drop policy if exists articles_write on public.articles;   drop policy if exists articles_read on public.articles;
+drop policy if exists articles_insert on public.articles;  drop policy if exists articles_update on public.articles;  drop policy if exists articles_delete on public.articles;
+create policy articles_read   on public.articles for select to authenticated using ((select is_member()));
+create policy articles_insert on public.articles for insert to authenticated with check ((select is_lead()));
+create policy articles_update on public.articles for update to authenticated using ((select is_lead())) with check ((select is_lead()));
+create policy articles_delete on public.articles for delete to authenticated using ((select is_lead()));
+
+drop policy if exists finals_write on public.finals;   drop policy if exists finals_read on public.finals;
+drop policy if exists finals_insert on public.finals;  drop policy if exists finals_update on public.finals;  drop policy if exists finals_delete on public.finals;
+create policy finals_read   on public.finals for select to authenticated using ((select is_member()));
+create policy finals_insert on public.finals for insert to authenticated with check ((select is_lead()));
+create policy finals_update on public.finals for update to authenticated using ((select is_lead())) with check ((select is_lead()));
+create policy finals_delete on public.finals for delete to authenticated using ((select is_lead()));
+
+drop policy if exists drafts_own on public.drafts;
+create policy drafts_own on public.drafts for all to authenticated
+  using (user_id = (select auth.uid()) and (select is_member())) with check (user_id = (select auth.uid()) and (select is_member()));
+
+drop policy if exists subs_read on public.submissions;   drop policy if exists subs_insert on public.submissions;
+drop policy if exists subs_update on public.submissions; drop policy if exists subs_delete on public.submissions;
+create policy subs_read on public.submissions for select to authenticated
+  using ((select is_member()) and (user_id = (select auth.uid()) or (select is_lead()) or has_submitted(article_key)));
+create policy subs_insert on public.submissions for insert to authenticated with check (user_id = (select auth.uid()) and (select is_member()));
+create policy subs_update on public.submissions for update to authenticated using (user_id = (select auth.uid())) with check (user_id = (select auth.uid()));
+create policy subs_delete on public.submissions for delete to authenticated using ((select is_lead()));
+
+drop policy if exists history_read on public.submission_history;
+create policy history_read on public.submission_history for select to authenticated using (user_id = (select auth.uid()) or (select is_lead()));
