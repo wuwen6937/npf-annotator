@@ -357,3 +357,11 @@ grant execute on function public.my_coder() to authenticated;
 drop policy if exists articles_read on public.articles;
 create policy articles_read on public.articles for select to authenticated
   using ((select is_lead()) or ((select is_member()) and not archived and (select my_coder()) = any(coders)));
+
+-- ================================================================ private settings, e.g. the codebook (2026-11-03)
+-- the codebook text is not part of the public code; it lives here, readable by the lead only
+create table if not exists public.app_config (key text primary key, value jsonb not null, updated_at timestamptz not null default now());
+alter table public.app_config enable row level security;
+drop policy if exists app_config_lead on public.app_config;
+create policy app_config_lead on public.app_config for all to authenticated using ((select is_lead())) with check ((select is_lead()));
+revoke all on public.app_config from anon;

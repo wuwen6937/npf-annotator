@@ -348,3 +348,6 @@ img{max-width:100%}
 .savest.err{color:var(--bad)} .savest.err::before{background:var(--bad)}
 .pn-h .savest{margin-left:auto;order:3}
 @media (min-width:861px){.rd-bar .savest{display:none}}
+
+/* codebook hidden for now */
+.nocb .q{display:none}
