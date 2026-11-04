@@ -365,3 +365,10 @@ alter table public.app_config enable row level security;
 drop policy if exists app_config_lead on public.app_config;
 create policy app_config_lead on public.app_config for all to authenticated using ((select is_lead())) with check ((select is_lead()));
 revoke all on public.app_config from anon;
+
+-- ================================================================ codebook readable by the team (2026-11-04)
+drop policy if exists app_config_lead on public.app_config;
+drop policy if exists app_config_read on public.app_config;
+drop policy if exists app_config_write on public.app_config;
+create policy app_config_read on public.app_config for select to authenticated using ((select is_lead()) or ((select is_member()) and key = 'codebook'));
+create policy app_config_write on public.app_config for all to authenticated using ((select is_lead())) with check ((select is_lead()));

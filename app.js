@@ -1,16 +1,16 @@
 "use strict";
 /* ================= codebook (from 261020_Coding_Table_shortened.xlsx) ================= */
-// The codebook text is not part of the public code. The lead's app loads the Results
-// headings for exports from the protected database; definitions are not shown for now.
+// The codebook text is not part of the public code. After sign-in the app loads the
+// codebook from the protected database after sign-in (definitions for the team, headings for exports).
 let CB = {defs:[], headers:[], legend:[]};
-const SHOW_CODEBOOK = false;
+const SHOW_CODEBOOK = true;
 const GENERIC_HEADERS = ['Article ID','Coder','Dataset','URL','Prescreening 1','Prescreening 2','Prescreening 3','Xi quoted','Party reference','Western reference','Spatial setting','Temporal setting',
   'Char 1 name','Char 1 valid','Char 1 action','Char 1 PRC','Char 1 level','Char 1 role','Char 2 name','Char 2 valid','Char 2 PRC','Char 2 level','Char 2 role',
   'Char 3 name','Char 3 valid','Char 3 PRC','Char 3 level','Char 3 role','Char 4 name','Char 4 valid','Char 4 PRC','Char 4 level','Char 4 role',
   'More than four characters','Characters with clear role','Plot 1 technology','Plot 1 type','Plot 2 exists','Plot 2 technology','Plot 2 type','Moral policy','Moral ideological','Narrative summary'];
 const resHeaders = () => CB.headers && CB.headers.length === 43 ? CB.headers : GENERIC_HEADERS;
 const resLegend = () => CB.legend && CB.legend.length === 43 ? CB.legend : GENERIC_HEADERS.map(() => '');
-if (!SHOW_CODEBOOK) document.documentElement.classList.add('nocb');
+document.documentElement.classList.add('nocb');
 const DEF = i => CB.defs[i] || ['', ''];
 
 /* ================= constants ================= */
@@ -1424,7 +1424,7 @@ document.addEventListener('scroll', e => { if (e.target === $('#pop')) return; i
 
 
 /* ================= roles ================= */
-const APP_VERSION = '2026-11-03i';
+const APP_VERSION = '2026-11-04a';
 const isLead = () => S.mode !== 'shared' || S.isAdmin;
 function allArticles() { return Object.values(S.articles).sort((a, b) => (a.order ?? 1e9) - (b.order ?? 1e9) || String(a.id).localeCompare(String(b.id), undefined, {numeric:true})); }
 function myQueue() { return corpus().filter(a => (assigned(a) || []).includes(String(S.coder))); }
@@ -1891,7 +1891,9 @@ async function enter(session) {
   catch (e) { S.sync = {s:'error', label:'Could not load everything', msg:e.message}; }
   if (!S.isAdmin) { const W = myWork(); const first = W.todo[0] || W.done[0]; if (first) S.cur = first.key; }
   else if (corpus().length && isPractice(S.cur) && LS.get('npf:practiced', false)) S.cur = (nextKey() || S.cur);
-  if (S.isAdmin) { try { await loadFeedback(); } catch {} try { const r = await sb.from('app_config').select('value').eq('key', 'codebook').maybeSingle(); if (r.data && r.data.value) CB = {defs:SHOW_CODEBOOK ? (r.data.value.defs || []) : [], headers:r.data.value.headers || [], legend:r.data.value.legend || []}; } catch {} S.view = 'progress'; } else S.view = 'inbox';
+  try { const r = await sb.from('app_config').select('value').eq('key', 'codebook').maybeSingle(); if (r.data && r.data.value) CB = {defs:SHOW_CODEBOOK ? (r.data.value.defs || []) : [], headers:r.data.value.headers || [], legend:r.data.value.legend || []}; } catch {}
+  document.documentElement.classList.toggle('nocb', !(SHOW_CODEBOOK && CB.defs.length));
+  if (S.isAdmin) { try { await loadFeedback(); } catch {} S.view = 'progress'; } else S.view = 'inbox';
   subscribeRealtime(); entering = false; render();
   if (!S.coder) toast(S.isAdmin ? 'Give yourself a coder number under Team.' : 'You have no coder number yet. The project lead sets it under Team.', 5000);
 }
