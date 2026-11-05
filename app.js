@@ -772,6 +772,7 @@ function flash(pred) {
 
 /* ================= saving ================= */
 async function submit() {
+  try { ttTick(); } catch {}
   const key = S.cur, c = draft(key);
   if (!S.coder && !isPractice(key)) { if (S.mode === 'shared') { toast(S.isAdmin ? 'Give yourself a coder number under Team first.' : 'You need a coder number before submitting. Ask the project lead to set it under Team.', 5000); return; } openCoder(true); return; }
   if (isPractice(key)) LS.set('npf:practiced', true);
@@ -1073,7 +1074,10 @@ function individualSheets() {
     (c.anns || []).slice().sort((p, q) => p.s - q.s).forEach(x => { const ch = (c.chars || []).find(z => z.id === x.c); pas.push([a.id, cc, a.dataset, CM[x.cat].label, CM[x.cat].plot ? (x.p || 1) : '', ch ? (ch.en || ch.name) : '', x.t, x.s, x.e, x.note || '']); });
     memos.push([a.id, cc, s.firstSubmittedAt || '', s.submittedAt || '', s.revisions || 0, s.revisedAfterComparison ? 1 : 0, s.memo || '']);
   });
-  return [['Results', res(cur), [12, 8, 8, 30]], ['Results (independent)', res(first), [12, 8, 8, 30]], ['Characters', chars], ['Passages', pas, [12, 7, 7, 26, 5, 22, 60]], ['Memos', memos], ['Articles', articlesSheet()]];
+  const T = timeStats(progressModel()); const mins = x => Math.round((x || 0) / 6) / 10;
+  const times = [['Article ID','Dataset','Coder','Status','Prescreening (min)','Coding (min)','Total active (min)','Review after submitting (min)','Sessions','Marks','First opened','Last active','Submitted','Check'],
+    ...T.rows.map(r => [r.a.id, r.a.dataset, r.coder, r.done ? (r.out ? 'screened out' : 'submitted') : 'in progress', mins(r.pre), mins(r.cod), mins(r.active), mins(r.rev), r.sessions, r.marks, r.first, r.last, r.submitted || '', r.flag])];
+  return [['Results', res(cur), [12, 8, 8, 30]], ['Results (independent)', res(first), [12, 8, 8, 30]], ['Characters', chars], ['Passages', pas, [12, 7, 7, 26, 5, 22, 60]], ['Memos', memos], ['Time', times, [10, 8, 7, 13, 12, 10, 12, 12, 9, 7, 22, 22, 22, 22]], ['Articles', articlesSheet()]];
 }
 function articlesSheet() {
   const mk = [...new Set(allArticles().flatMap(a => Object.keys(a.meta || {})))];
@@ -1109,7 +1113,7 @@ function openExport() {
   const n = allSubs('current').length;
   modal(`<div class="mh"><div><h2>Export</h2><p class="sub">${n} submitted coding${n === 1 ? '' : 's'} across ${corpus().filter(a => Object.keys(subsOf(a.key)).length).length} articles. Excel files use the exact column layout of your Results sheet.</p></div><button class="x" data-act="close" aria-label="Close">×</button></div>
     <div style="display:grid;gap:10px">
-      ${expRow('ind', 'Individual codings (.xlsx)', 'One row per coder and article in the Results layout, plus a sheet with the independent first submissions, all characters, every marked passage with position, and memos.')}
+      ${expRow('ind', 'Individual codings (.xlsx)', 'One row per coder and article in the Results layout, plus a sheet with the independent first submissions, all characters, every marked passage with position, memos, and working time per coding.')}
       ${expRow('cons', 'Consensus dataset (.xlsx)', 'One row per article: resolved values where set, otherwise the majority. Includes an agreement table per article and variable.')}
       ${expRow('rel', 'Reliability report (.xlsx)', 'α, intervals, % agreement and n for every variable, for independent and latest codings, with the methods paragraph.')}
       ${expRow('json', 'Full backup (.json)', 'Everything in the project, to archive with the paper or restore later.')}
@@ -1118,6 +1122,7 @@ function openExport() {
 const expRow = (k, t, d) => `<div class="card" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:12px 14px"><div style="flex:1;min-width:220px"><b>${t}</b><div style="color:var(--muted);font-size:12.5px">${d}</div></div><div style="display:flex;gap:6px">${k !== 'json' ? `<button class="btn sm" data-act="copyexp" data-k="${k}">Copy for Excel</button>` : ''}<button class="btn sm pri" data-act="dl" data-k="${k}">Download</button></div></div>`;
 async function doExport(k, copy) {
   if (!allSubs('current').length && k !== 'json') { toast('Nothing submitted yet.'); return; }
+  if (k === 'ind' && S.mode === 'shared' && S.isAdmin) { try { await loadProgress(); } catch {} }
   const sheets = k === 'ind' ? individualSheets() : k === 'cons' ? consensusSheets() : k === 'rel' ? reliabilitySheets() : null;
   if (copy) return copyText(tsv(sheets[0][1]), 'Copied “' + sheets[0][0] + '”. Paste it into Excel.');
   if (k === 'json') return saveFile('NPF_backup_' + stamp() + '.json', backupJSON());
@@ -1377,6 +1382,7 @@ document.addEventListener('click', async e => {
 document.addEventListener('change', e => {
   const t = e.target;
   if (t.dataset.act === 'final') { saveFinal(t.dataset.key, {values:{[t.dataset.k]:t.value === '' ? '' : +t.value}}).then(() => renderView()); }
+  if (t.dataset.act === 'timeflags') { S.prog.onlyFlags = t.checked; renderView(); return; }
   if (t.dataset.act === 'progopen') { S.prog.onlyOpen = t.checked; renderView(); return; }
   if (t.dataset.act === 'leadview') { S.leadView = t.checked; LS.set('npf:leadView', t.checked); if (t.checked) toast('Lead view on. Code your own articles before you look at them here.', 4000); renderView(); return; }
   if (t.dataset.act === 'anf') { S.an[t.dataset.f] = t.value; renderView(); }
@@ -1424,7 +1430,7 @@ document.addEventListener('scroll', e => { if (e.target === $('#pop')) return; i
 
 
 /* ================= roles ================= */
-const APP_VERSION = '2026-11-04a';
+const APP_VERSION = '2026-11-05a';
 const isLead = () => S.mode !== 'shared' || S.isAdmin;
 function allArticles() { return Object.values(S.articles).sort((a, b) => (a.order ?? 1e9) - (b.order ?? 1e9) || String(a.id).localeCompare(String(b.id), undefined, {numeric:true})); }
 function myQueue() { return corpus().filter(a => (assigned(a) || []).includes(String(S.coder))); }
@@ -1478,7 +1484,8 @@ function viewInbox(v) {
     const isNew = !isDone && st === 'none' && !wasSeen(a.key);
     const status = isDone ? (screenedOut(s) ? '<span class="pill na">screened out</span>' : `<span class="pill good">coded · ${(s.anns || []).length} mark${(s.anns || []).length === 1 ? '' : 's'}</span>`)
       : isNew ? '<span class="pill new">new</span>' : st === 'draft' ? `<span class="pill warn">in progress · ${(c.anns || []).length} mark${(c.anns || []).length === 1 ? '' : 's'}</span>` : '<span class="pill na">not started</span>';
-    const when = isDone ? `submitted ${esc(ago(s.submittedAt))}${s.revisions ? ' · changed ' + s.revisions + '×' : ''}` : st === 'draft' && c.updatedAt ? 'last edited ' + esc(ago(c.updatedAt)) : '';
+    const tm = (isDone ? (s && s.time) : (c && c.time)) || null;
+    const when = (isDone ? `submitted ${esc(ago(s.submittedAt))}${s.revisions ? ' · changed ' + s.revisions + '×' : ''}` : st === 'draft' && c.updatedAt ? 'last edited ' + esc(ago(c.updatedAt)) : '') + (tm && tm.active >= 60 ? (isDone || st === 'draft' ? ' · ' : '') + fmtMin(tm.active) + (isDone ? '' : ' so far') : '');
     return `<article class="wk ${isNew ? 'is-new' : ''} ${isDone ? 'is-done' : ''}">
       <div class="wk-m"><span class="tag">${esc(a.id)}</span><span class="tag">${a.dataset === '1' ? 'CN' : 'EN'}</span>${status}${duePill(a, isDone)}</div>
       <h3 lang="${a.dataset === '1' ? 'zh' : 'en'}">${esc(a.title || String(a.text || '').slice(0, 80))}</h3>
@@ -1501,6 +1508,7 @@ function viewInbox(v) {
     <section><div class="sec-t"><h3>To do</h3><span class="tag">${W.todo.length}</span></div>
       ${W.todo.length ? `<div class="wk-list">${W.todo.map(a => card(a, false)).join('')}</div>` : `<div class="card empty" style="padding:18px">${n ? '<b>Nothing left to do</b>Well done.' : '<b>No articles yet</b>Meanwhile, try the practice texts below.'}</div>`}</section>
     ${W.done.length ? `<section><div class="sec-t"><h3>Done</h3><span class="tag">${W.done.length}</span><span class="small" style="margin:0 0 0 auto">Open one to review it. Choose “Edit again” there to change it.</span></div><div class="wk-list">${W.done.map(a => card(a, true)).join('')}</div></section>` : ''}
+    ${S.mode === 'shared' ? '<p class="small" style="margin:0">The app records your active working time per article (only while an article is open and you are active) to help plan the workload. You see your own times here.</p>' : ''}
     <section><div class="sec-t"><h3>Practice</h3></div><div class="wk-list">${PRACTICE.map(a => `<article class="wk"><div class="wk-m"><span class="tag">${a.dataset === '1' ? 'CN' : 'EN'}</span>${myStatus(a.key) === 'done' ? '<span class="pill good">done</span>' : ''}</div><h3 lang="${a.dataset === '1' ? 'zh' : 'en'}">${esc(a.title)}</h3><div class="wk-f"><span class="small" style="margin:0">Not part of the study. Try the tool here.</span><button class="btn sm" data-act="work" data-key="${a.key}">Open</button></div></article>`).join('')}</div></section>
   </div></div>`;
 }
@@ -1549,6 +1557,80 @@ async function doSetDue(clear) {
   closeModal(); toast((clear ? 'Due date removed for ' : 'Due ' + fmtDay(date) + ' set for ') + arts.length + ' article' + (arts.length === 1 ? '' : 's') + '.'); renderView();
 }
 
+
+/* ================= active working time ================= */
+// Counts only while an article is open in Code, the window is visible and the coder was active
+// (mouse, keys, touch, scrolling) within the last 3 minutes. Split into prescreening, coding and review.
+const IDLE_MS = 3 * 60000;
+const TT = {key:null, last:Date.now(), lastAct:Date.now(), dirty:false, saveAt:0, fresh:true};
+const fmtMin = sec => { const m = Math.round((sec || 0) / 60); return m < 60 ? m + ' min' : Math.floor(m / 60) + ' h ' + String(m % 60).padStart(2, '0') + ' min'; };
+function ttActivity() { TT.lastAct = Date.now(); }
+['pointerdown', 'pointermove', 'keydown', 'wheel', 'touchstart', 'input', 'scroll'].forEach(ev => document.addEventListener(ev, ttActivity, {passive:true, capture:true}));
+function ttTick() {
+  const t0 = Date.now(); const key = S.view === 'code' ? S.cur : null;
+  if (key !== TT.key) { ttFlush(); TT.key = key; TT.last = t0; TT.fresh = true; return; }
+  const dt = Math.min(t0 - TT.last, 15000); TT.last = t0;
+  if (!key || isPractice(key) || S.mode !== 'shared' || !art(key) || document.visibilityState !== 'visible' || t0 - TT.lastAct > IDLE_MS) return;
+  const c = draft(key);
+  const ph = c.status === 'submitted' ? 'review' : preDone(c) ? 'coding' : 'prescreen';
+  const t = c.time || (c.time = {active:0, prescreen:0, coding:0, review:0, sessions:0, first:now()});
+  if (TT.fresh) { t.sessions = (t.sessions || 0) + 1; TT.fresh = false; }
+  t[ph] = (t[ph] || 0) + dt / 1000; if (ph !== 'review') t.active = (t.active || 0) + dt / 1000;
+  t.last = now(); TT.dirty = true;
+  if (t0 - TT.saveAt > 30000) ttFlush();
+}
+function ttFlush(now_) {
+  if (!TT.dirty || !TT.key || isPractice(TT.key) || S.mode !== 'shared') return;
+  TT.dirty = false; TT.saveAt = Date.now(); const k = TT.key; queueSave(k); if (now_) flushSave(k);
+}
+setInterval(ttTick, 5000);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') { ttTick(); ttFlush(true); } else { TT.last = Date.now(); TT.lastAct = Date.now(); } });
+addEventListener('pagehide', () => { ttTick(); ttFlush(true); });
+
+/* ---------- time and quality overview (lead) ---------- */
+const median = arr => { const v = arr.filter(x => x > 0).sort((a, b) => a - b); if (!v.length) return null; const m = Math.floor(v.length / 2); return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2; };
+function timeStats(P) {
+  const rows = [];
+  P.coders.forEach(m => { const s = P.st[m.coder] || {}; for (const k in s) { const a = S.articles[k]; if (!a || a.archived) continue; const t = s[k].time || {};
+    rows.push({coder:m.coder, a, active:t.active || 0, pre:t.prescreen || 0, cod:t.coding || 0, rev:t.review || 0, sessions:t.sessions || 0, first:t.first || '', last:t.last || '', done:s[k].status === 'submitted', out:!!s[k].out, marks:s[k].marks || 0, submitted:s[k].submittedAt || (s[k].status === 'submitted' ? s[k].at : '')}); } });
+  const coded = ds => rows.filter(r => r.done && !r.out && (!ds || r.a.dataset === ds)).map(r => r.active);
+  const med = {CN:median(coded('1')), EN:median(coded('2')), all:median(coded()), out:median(rows.filter(r => r.done && r.out).map(r => r.active))};
+  const nDs = {'1':coded('1').filter(x => x > 0).length, '2':coded('2').filter(x => x > 0).length};
+  rows.forEach(r => {
+    r.flag = '';
+    if (!r.done) return;
+    if (!r.active) { r.flag = 'no time recorded'; r.sev = 'na'; return; }
+    const m = r.a.dataset === '1' ? med.CN : med.EN;
+    if (!r.out && m && nDs[r.a.dataset] >= 3) { if (r.active < .35 * m) { r.flag = 'much faster than usual'; r.sev = 'warn'; } else if (r.active > 3 * m) { r.flag = 'much longer than usual'; r.sev = 'na'; } }
+    if (!r.flag && !r.out && r.marks < 3) { r.flag = 'very few marks'; r.sev = 'warn'; }
+  });
+  const left = P.rows.reduce((n, r) => n + r.open + r.prog, 0);
+  return {rows, med, total:rows.reduce((n, r) => n + r.active, 0), left, est:med.all ? left * med.all : null};
+}
+function timeCard(P) {
+  const T = timeStats(P); const f = S.prog || {};
+  const byCoder = P.coders.map(m => { const rs = T.rows.filter(r => r.coder === String(m.coder)); const done = rs.filter(r => r.done && !r.out);
+    const pr = P.rows.find(x => String(x.m.coder) === String(m.coder)) || {open:0, prog:0};
+    const mm = median(done.map(r => r.active)) || T.med.all;
+    return {m, total:rs.reduce((n, r) => n + r.active, 0), med:median(done.map(r => r.active)), pre:rs.reduce((n, r) => n + r.pre, 0), flags:rs.filter(r => r.flag && r.sev === 'warn').length, est:mm ? (pr.open + pr.prog) * mm : null}; });
+  const list = T.rows.filter(r => !f.onlyFlags || r.flag).sort((a, b) => (b.flag && b.sev === 'warn' ? 1 : 0) - (a.flag && a.sev === 'warn' ? 1 : 0) || String(b.last).localeCompare(String(a.last)));
+  const mn = x => x == null ? '–' : fmtMin(x);
+  return `<div class="card"><div class="vh" style="align-items:center"><div><h3>Time and quality</h3><p class="sub" style="margin:0">Active working time: counted only while an article is open, the window is visible and the coder was active in the last 3 minutes. Reading and scrolling count, breaks do not.</p></div></div>
+    <div class="stats" style="margin-top:12px">
+      <div class="stat"><b>${mn(T.total)}</b><span>team time so far</span></div>
+      <div class="stat"><b>${mn(T.med.CN)}<span style="font-size:15px;color:var(--muted)"> · ${mn(T.med.EN)}</span></b><span>typical time per coded article (median, CN · EN)</span></div>
+      <div class="stat"><b>${mn(T.med.out)}</b><span>typical time per screened-out article</span></div>
+      <div class="stat"><b>${T.est ? '≈ ' + mn(T.est) : '–'}</b><span>estimated time left for ${T.left} open coding${T.left === 1 ? '' : 's'}</span></div>
+    </div>
+    <div class="tw" style="margin-top:12px"><table><thead><tr><th>Coder</th><th class="n">Time so far</th><th class="n">Median per coded article</th><th class="n">Share prescreening</th><th class="n">To check</th><th class="n">Estimated time left</th></tr></thead><tbody>
+      ${byCoder.map(c => `<tr><td><b>${esc(coderIni(c.m.coder))}</b></td><td class="n">${mn(c.total)}</td><td class="n">${mn(c.med)}</td><td class="n">${c.total ? pct(c.pre / c.total) : '–'}</td><td class="n" style="${c.flags ? 'color:var(--warn);font-weight:600' : ''}">${c.flags || ''}</td><td class="n">${c.est ? '≈ ' + mn(c.est) : '–'}</td></tr>`).join('')}</tbody></table></div>
+    <div class="vh" style="align-items:center;margin-top:14px"><div><h3 style="font-size:13px;margin:0">Per coding</h3><p class="sub" style="margin:0">“Much faster than usual” means under 35% of the typical time for that language, “very few marks” under 3 marks in a coded article. Worth a look in Compare, not proof of a problem.</p></div>
+      <div class="tools"><label style="display:flex;gap:6px;align-items:center;font-size:12.5px;color:var(--muted)"><input type="checkbox" data-act="timeflags" ${f.onlyFlags ? 'checked' : ''} style="width:auto"> Only codings to check</label></div></div>
+    <div class="tw" style="max-height:420px;overflow:auto;margin-top:8px"><table><thead><tr><th>Article</th><th>Data</th><th>Coder</th><th class="n">Prescreening</th><th class="n">Coding</th><th class="n">Total</th><th class="n">Sessions</th><th class="n">Marks</th><th>Status</th><th>Check</th></tr></thead><tbody>
+      ${list.slice(0, 400).map(r => `<tr><td><button class="link" data-act="${r.done ? 'gocmp' : 'gocode'}" data-key="${esc(r.a.key)}">${esc(r.a.id)}</button></td><td>${r.a.dataset === '1' ? 'CN' : 'EN'}</td><td>${esc(coderIni(r.coder))}</td><td class="n">${mn(r.pre)}</td><td class="n">${r.out ? '–' : mn(r.cod)}</td><td class="n"><b>${mn(r.active)}</b></td><td class="n">${r.sessions || '–'}</td><td class="n">${r.out ? '–' : r.marks}</td>
+        <td>${r.done ? (r.out ? '<span class="pill na">screened out</span>' : '<span class="pill good">submitted</span>') : '<span class="pill warn">in progress</span>'}</td><td>${r.flag ? `<span class="pill ${r.sev || 'na'}">${esc(r.flag)}</span>` : ''}</td></tr>`).join('') || `<tr><td colspan="10" style="color:var(--muted)">No working time recorded yet. It appears here as soon as coders open their articles.</td></tr>`}</tbody></table></div></div>`;
+}
+
 /* ================= lead data ================= */
 async function loadFeedback() { if (S.mode !== 'shared' || !S.isAdmin) return; const {data, error} = await sb.from('feedback').select('*').order('created_at', {ascending:false}).limit(500); if (!error) S.feedback = data; }
 async function loadProgress() { if (S.mode !== 'shared' || !S.isAdmin) return; const {data, error} = await sb.rpc('progress_overview'); if (!error) { S.progress = data || []; S.progressAt = Date.now(); } }
@@ -1564,8 +1646,8 @@ function teamCoders() {
 function progressModel() {
   const coders = teamCoders(); const byUid = {}; coders.forEach(m => { if (m.user_id) byUid[m.user_id] = m.coder; });
   const st = {}; // coder -> key -> {status, marks, at}
-  (S.progress || []).forEach(r => { const c = byUid[r.user_id] || (S.profiles[r.user_id] || {}).coder; if (!c) return; (st[c] = st[c] || {})[r.article_key] = {status:r.status, marks:r.marks, at:r.updated_at}; });
-  Object.entries(S.subs || {}).forEach(([uid, m]) => { const c = byUid[uid] || (S.profiles[uid] || {}).coder; if (!c) return; for (const k in m) { st[c] = st[c] || {}; if (!st[c][k]) st[c][k] = {status:'submitted', marks:(m[k].anns || []).length, at:m[k].submittedAt}; if (screenedOut(m[k])) st[c][k].out = true; } });
+  (S.progress || []).forEach(r => { const c = byUid[r.user_id] || (S.profiles[r.user_id] || {}).coder; if (!c) return; (st[c] = st[c] || {})[r.article_key] = {status:r.status, marks:r.marks, at:r.updated_at, time:r.work_time || null, submittedAt:r.submitted_at}; });
+  Object.entries(S.subs || {}).forEach(([uid, m]) => { const c = byUid[uid] || (S.profiles[uid] || {}).coder; if (!c) return; for (const k in m) { st[c] = st[c] || {}; if (!st[c][k]) st[c][k] = {status:'submitted', marks:(m[k].anns || []).length, at:m[k].submittedAt, time:m[k].time || null, submittedAt:m[k].submittedAt}; if (screenedOut(m[k])) st[c][k].out = true; } });
   const arts = corpus();
   const need = a => assigned(a) || [];
   const rows = coders.map(m => {
@@ -1586,11 +1668,11 @@ function viewProgress(v) {
   clearInterval(progTimer);
   if (S.mode === 'shared') { if (!S.progressAt || Date.now() - S.progressAt > 20000) Promise.all([loadProgress(), loadFeedback(), loadBackups()]).then(() => { if (S.view === 'progress') renderView(); }); progTimer = setInterval(() => { if (S.view !== 'progress') return clearInterval(progTimer); loadProgress().then(() => { if (S.view === 'progress' && $('#modal').hidden && !(document.activeElement && /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName))) renderView(); }); }, 60000); }
   const P = progressModel(); const f = S.prog || (S.prog = {onlyOpen:true});
-  const sym = s => !s ? '<i class="pcd todo" title="Not started"></i>' : s.status === 'submitted' ? (s.out ? `<i class="pcd done out" title="Submitted as screened out ${esc(fmtDate(s.at))}"></i>` : `<i class="pcd done" title="Submitted ${esc(fmtDate(s.at))}"></i>`) : s.status === 'reopened' ? `<i class="pcd reo" title="Reopened after submitting"></i>` : `<i class="pcd wip" title="In progress · ${s.marks} marks · ${esc(ago(s.at))}"></i>`;
+  const sym = s => !s ? '<i class="pcd todo" title="Not started"></i>' : s.status === 'submitted' ? (s.out ? `<i class="pcd done out" title="Submitted as screened out ${esc(fmtDate(s.at))}"></i>` : `<i class="pcd done" title="Submitted ${esc(fmtDate(s.at))}${s.time && s.time.active ? ' · ' + fmtMin(s.time.active) : ''}"></i>`) : s.status === 'reopened' ? `<i class="pcd reo" title="Reopened after submitting"></i>` : `<i class="pcd wip" title="In progress · ${s.marks} marks · ${esc(ago(s.at))}${s.time && s.time.active ? ' · ' + fmtMin(s.time.active) + ' so far' : ''}"></i>`;
   const artRows = P.arts.filter(a => !f.onlyOpen || !P.need(a).every(c => P.st[c] && P.st[c][a.key] && P.st[c][a.key].status === 'submitted'));
   const fb = S.feedback || [];
   v.innerHTML = `<div class="wide"><div class="wrap">
-    <div class="vh"><div><h2>Progress</h2><p>Who has coded what, feedback from the team, and the safety copies of your data. Updates every minute while open.</p></div><div class="tools"><button class="btn sm" data-act="progrefresh">Refresh</button></div></div>
+    <div class="vh"><div><h2>Progress</h2><p>Who has coded what, how long it took, feedback from the team, and the safety copies of your data. Updates every minute while open.</p></div><div class="tools"><button class="btn sm" data-act="progrefresh">Refresh</button></div></div>
     <div class="stats">
       <div class="stat"><b>${P.submitted}<span style="font-size:15px;color:var(--muted)"> / ${P.expected}</span></b><span>codings submitted</span><div class="abar" style="margin-top:8px"><i style="width:${P.expected ? P.submitted / P.expected * 100 : 0}%;background:var(--accent)"></i></div></div>
       <div class="stat"><b>${P.complete}<span style="font-size:15px;color:var(--muted)"> / ${P.arts.length}</span></b><span>articles coded by all their coders</span></div>
@@ -1607,6 +1689,7 @@ function viewProgress(v) {
       <div class="tw" style="max-height:460px;overflow:auto;margin-top:10px"><table><thead><tr><th>Article</th><th>Data</th><th>Due</th>${P.coders.map(m => `<th class="n" style="text-align:center">${esc(coderIni(m.coder))}</th>`).join('')}</tr></thead><tbody>
       ${artRows.slice(0, 400).map(a => `<tr><td><button class="link" data-act="gocode" data-key="${esc(a.key)}">${esc(a.id)}</button> <span style="color:var(--muted);font-size:12px">${esc((a.title || '').slice(0, 50))}</span></td><td>${a.dataset === '1' ? 'CN' : 'EN'}</td><td style="white-space:nowrap">${a.due ? duePill(a, P.need(a).length && P.need(a).every(c => P.st[c] && P.st[c][a.key] && P.st[c][a.key].status === 'submitted')) : '<span class="small" style="margin:0">–</span>'}</td>
         ${P.coders.map(m => `<td style="text-align:center">${P.need(a).includes(String(m.coder)) ? sym(P.st[m.coder] && P.st[m.coder][a.key]) : ''}</td>`).join('')}</tr>`).join('') || `<tr><td colspan="${P.coders.length + 3}" style="color:var(--muted)">${P.arts.length ? 'Every article is fully coded.' : 'No articles yet.'}</td></tr>`}</tbody></table></div></div>
+    ${timeCard(P)}
     <div class="card"><h3>Feedback and bug reports</h3><p class="sub">Sent by coders with the Feedback button. The app adds where they were and which device they used.</p>
       ${S.mode !== 'shared' ? '<p class="small">Feedback works in the shared project.</p>' : fb.length ? fb.map(x => `<div class="psg"><div class="psg-m"><span class="pill ${x.kind === 'bug' ? 'bad' : x.kind === 'idea' ? 'good' : 'na'}">${x.kind}</span><b style="color:var(--ink)">${esc(x.coder ? coderIni(x.coder) : x.email)}</b><span>${esc(fmtDate(x.created_at))}</span>${x.context && x.context.article ? `<span>· article ${esc(x.context.article)}</span>` : ''}${x.context && x.context.view ? `<span>· ${esc(x.context.view)} view</span>` : ''}${x.context && x.context.device ? `<span>· ${esc(x.context.device)}</span>` : ''}
           <button class="btn sm" style="margin-left:auto" data-act="fbstatus" data-id="${x.id}" data-v="${x.status === 'open' ? 'done' : 'open'}">${x.status === 'open' ? 'Mark as done' : 'Reopen'}</button></div>
@@ -1709,7 +1792,7 @@ addEventListener('beforeunload', e => { if (S.mode === 'shared' && pendingSave.s
 async function writeSub(key, sub) {
   if (isPractice(key)) { S.practiceSubs[key] = sub; persistLocal(); return; }
   if (S.mode !== 'shared') { (S.local.subs[S.uid] = S.local.subs[S.uid] || {})[key] = sub; S.subs = S.local.subs; persistLocal(); return; }
-  const data = {anns:sub.anns, chars:sub.chars, codes:sub.codes, summary:sub.summary, memo:sub.memo || '', revisedAfterComparison:!!sub.revisedAfterComparison};
+  const data = {anns:sub.anns, chars:sub.chars, codes:sub.codes, summary:sub.summary, memo:sub.memo || '', revisedAfterComparison:!!sub.revisedAfterComparison, time:sub.time || null};
   const {error} = await sb.from('submissions').upsert({user_id:S.uid, article_key:key, data});
   if (error) throw error;
   await loadSubs();
