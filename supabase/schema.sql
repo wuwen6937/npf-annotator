@@ -372,22 +372,3 @@ drop policy if exists app_config_read on public.app_config;
 drop policy if exists app_config_write on public.app_config;
 create policy app_config_read on public.app_config for select to authenticated using ((select is_lead()) or ((select is_member()) and key = 'codebook'));
 create policy app_config_write on public.app_config for all to authenticated using ((select is_lead())) with check ((select is_lead()));
-
--- ================================================================ progress with working time (2026-11-05)
-drop function if exists public.progress_overview();
-create function public.progress_overview()
-returns table (user_id uuid, article_key text, status text, marks int, updated_at timestamptz, work_time jsonb, submitted_at timestamptz)
-language sql stable security definer set search_path = public as $$
-  select d.user_id, d.article_key,
-         case when s.user_id is not null and coalesce(d.data->>'status','') = 'submitted' then 'submitted'
-              when s.user_id is not null then 'reopened' else 'draft' end,
-         coalesce(jsonb_array_length(d.data->'anns'), 0), d.updated_at, coalesce(d.data->'time', s.data->'time'), s.submitted_at
-  from drafts d left join submissions s on s.user_id = d.user_id and s.article_key = d.article_key
-  where is_lead()
-  union all
-  select s.user_id, s.article_key, 'submitted', coalesce(jsonb_array_length(s.data->'anns'), 0), s.submitted_at, s.data->'time', s.submitted_at
-  from submissions s
-  where is_lead() and not exists (select 1 from drafts d where d.user_id = s.user_id and d.article_key = s.article_key)
-$$;
-revoke execute on function public.progress_overview() from public, anon;
-grant execute on function public.progress_overview() to authenticated;
