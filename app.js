@@ -20,7 +20,7 @@ const CODERS = [
 ];
 const CATS = [
   {id:'xi',      short:'Xi quote',      label:'Xi Jinping quoted',                     key:'x', grp:'Ideology',   color:'#c2410c', def:14},
-  {id:'party',   short:'Party ref.',    label:'Party document / institution / event',  key:'p', grp:'Ideology',   color:'#dc2626', def:15},
+  {id:'party',   short:'Party / tifa',   label:'Party document / institution / event / tifa',  key:'p', grp:'Ideology',   color:'#dc2626', def:15},
   {id:'west',    short:'Western ref.',  label:'Western document / institution / event',key:'w', grp:'Ideology',   color:'#2563eb', def:16},
   {id:'spatial', short:'Place',         label:'Spatial setting (place)',               key:'s', grp:'Setting',    color:'#0d9488', def:19},
   {id:'temporal',short:'Time',          label:'Temporal setting (time)',               key:'t', grp:'Setting',    color:'#65a30d', def:20},
@@ -42,7 +42,7 @@ const F = [
   {k:'p2', sec:'Prescreening', label:'Characters recognisable', def:10},
   {k:'p3', sec:'Prescreening', label:'Plot recognisable', def:11},
   {k:'xi', sec:'Level of ideology', label:'Xi Jinping quoted', def:14, cat:'xi'},
-  {k:'party', sec:'Level of ideology', label:'Party document / institution / event', def:15, cat:'party'},
+  {k:'party', sec:'Level of ideology', label:'Party document / institution / event / tifa', def:15, cat:'party'},
   {k:'west', sec:'Level of ideology', label:'Western document / institution / event', def:16, cat:'west'},
   {k:'spatial', sec:'Setting', label:'Spatial setting', def:19, cat:'spatial'},
   {k:'temporal', sec:'Setting', label:'Temporal setting', def:20, cat:'temporal'},
@@ -1559,7 +1559,7 @@ document.addEventListener('scroll', e => { if (e.target === $('#pop')) return; i
 
 
 /* ================= roles ================= */
-const APP_VERSION = '2026-11-06b';
+const APP_VERSION = '2026-11-06c';
 const isLead = () => S.mode !== 'shared' || S.isAdmin;
 function allArticles() { return Object.values(S.articles).sort((a, b) => (a.order ?? 1e9) - (b.order ?? 1e9) || String(a.id).localeCompare(String(b.id), undefined, {numeric:true})); }
 function myQueue() { return corpus().filter(a => (assigned(a) || []).includes(String(S.coder))); }
