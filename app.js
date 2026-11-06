@@ -428,7 +428,8 @@ function render() { renderTop(); renderView(); }
 function renderTop() {
   const nf = openFeedback();
   const todoN = myWork().todo.length;
-  const mine = ['inbox', 'My work' + (todoN ? ` <span class="badge soft">${todoN}</span>` : '')];
+  const unN = S.mode === 'shared' ? unreadThreads().length : 0;
+  const mine = ['inbox', 'My work' + (todoN ? ` <span class="badge soft">${todoN}</span>` : '') + (unN ? ` <span class="badge" title="New messages in discussions">${unN}</span>` : '')];
   const tabs = isLead() ? [mine, ['code','Code'], ...(S.mode === 'shared' ? [['progress','Progress' + (nf ? ` <span class="badge">${nf}</span>` : '')]] : []), ['compare','Compare'],['reliability','Reliability'],['analyse','Analyse']] : [mine, ['code','Code']];
   const q = !isLead() ? myQueue() : [], qd = q.filter(a => myStatus(a.key) === 'done').length;
   const sy = S.sync;
@@ -535,11 +536,12 @@ function renderReader() {
     ${preTop(c, lk)}
     ${!S.hintOff && !lk && preDone(c) && !screenedOut(c) ? `<div class="hint"><span><b>${matchMedia('(pointer: coarse)').matches ? 'Press and hold a word, drag to cover the passage, then pick a category.' : 'Select words in the text to code them.'}</b> A menu opens with the codebook categories${matchMedia('(pointer: coarse)').matches ? '' : '; each has a shortcut key'}. Click a highlight to change or delete it. Most Yes/No answers on the right fill themselves from what you mark.</span><button data-act="hintoff" aria-label="Hide tip">✕</button></div>` : ''}
     <div class="rd-bar">
+      ${S.mode === 'shared' && !a.practice ? (() => { const ts = threadsFor(a.key), op = ts.filter(t => t.status === 'open').length, un = ts.filter(isUnread).length; return `<button class="btn sm" data-act="discuss" title="Questions and discussion with the other coders of this article">Discuss${op ? ` <span class="badge soft">${op}</span>` : ''}${un ? ' <span class="badge">new</span>' : ''}</button>`; })() : ''}
       <span class="savest"></span>
       <span style="display:flex;align-items:center;gap:6px" title="Technology and positive/negative turns are tagged to this plot">Plot passages go to <span class="mini-seg"><button data-act="plot" data-v="1" class="${S.plot === 1 ? 'on' : ''}">1</button><button data-act="plot" data-v="2" class="${S.plot === 2 ? 'on' : ''}">2</button></span></span>
       <span class="legend">${CATS.filter(x => counts[x.id]).map(x => `<button class="lg ${S.hidden[x.id] ? 'off' : ''}" style="--c:${x.color}" data-act="lg" data-cat="${x.id}" title="Show or hide"><i></i>${x.short}<b>${counts[x.id]}</b></button>`).join('') || '<span>Nothing marked yet</span>'}</span>
     </div>
-    <div id="txt" class="txt ${screenedOut(c) ? 'out' : ''}" lang="${a.dataset === '1' ? 'zh' : 'en'}">${textHTML(a.text, c.anns.filter(x => !S.hidden[x.cat]), c)}</div>
+    <div id="txt" class="txt ${screenedOut(c) ? 'out' : ''}" lang="${a.dataset === '1' ? 'zh' : 'en'}">${textHTML(a.text, c.anns.filter(x => !S.hidden[x.cat]), c, S.mode === 'shared' && !a.practice ? threadsFor(a.key).filter(t => t.status === 'open') : [])}</div>
     ${preBottom(c, lk)}
   </div>`;
 }
@@ -567,18 +569,20 @@ function preBottom(c, lk) {
       : done ? `<div class="ps-ok"><b>The text passes.</b> Continue with the full coding. <button class="btn sm pri" data-act="psclose">Start marking</button></div>` : ''}
   </section>`;
 }
-function textHTML(text, anns, c) {
-  const pts = new Set([0, text.length]); anns.forEach(a => { pts.add(a.s); pts.add(a.e); });
+function textHTML(text, anns, c, flags) {
+  flags = (flags || []).filter(f => f.s != null && f.e > f.s);
+  const pts = new Set([0, text.length]); anns.forEach(a => { pts.add(a.s); pts.add(a.e); }); flags.forEach(f => { pts.add(f.s); pts.add(f.e); });
   const arr = [...pts].sort((x, y) => x - y); let h = '';
   const chIdx = {}; (c && c.chars || []).forEach((ch, i) => chIdx[ch.id] = i + 1);
   for (let i = 0; i < arr.length - 1; i++) {
     const s = arr[i], e = arr[i + 1]; if (e <= s) continue;
     const seg = text.slice(s, e); const cov = anns.filter(a => a.s <= s && a.e >= e);
-    if (!cov.length) { h += esc(seg); continue; }
+    const fl = flags.filter(f => f.s <= s && f.e >= e); const th = fl.length ? ` data-th="${fl.map(f => f.id).join(',')}"` : '';
+    if (!cov.length) { h += fl.length ? `<span class="fl"${th} title="Flagged for discussion">${esc(seg)}</span>` : esc(seg); continue; }
     const top = cov.reduce((m, a) => (a.e - a.s) < (m.e - m.s) ? a : m, cov[0]);
     const cat = CM[top.cat];
     const badge = top.e === e && (top.cat === 'char' || top.cat === 'action') && chIdx[top.c] ? ` data-b="${chIdx[top.c]}"` : top.e === e && top.p === 2 ? ' data-b="P2"' : '';
-    h += `<span class="hl${cov.length > 1 ? ' multi' : ''}${cat.dash ? ' dash' : ''}" style="--c:${cat.color}" data-ids="${cov.map(a => a.id).join(',')}" data-cats="${cov.map(a => a.cat).join(',')}"${badge}>${esc(seg)}</span>`;
+    h += `<span class="hl${cov.length > 1 ? ' multi' : ''}${cat.dash ? ' dash' : ''}${fl.length ? ' fl' : ''}" style="--c:${cat.color}" data-ids="${cov.map(a => a.id).join(',')}" data-cats="${cov.map(a => a.cat).join(',')}"${badge}${th}>${esc(seg)}</span>`;
   }
   return h;
 }
@@ -688,8 +692,10 @@ function checkSel() {
   while (s < e && /\s/.test(text[s])) s++; while (e > s && /\s/.test(text[e - 1])) e--;
   if (a.dataset !== '1') { const W = /[A-Za-z0-9À-ɏ]/; while (s > 0 && W.test(text[s - 1]) && W.test(text[s])) s--; while (e < text.length && W.test(text[e]) && W.test(text[e - 1])) e++; }
   if (e <= s) return;
-  if (locked(S.cur)) { toast('This coding is submitted. Choose “Edit again” to change it.'); return; }
+  const canFlag = S.mode === 'shared' && !isPractice(S.cur);
+  if (locked(S.cur)) { if (canFlag) { S.sel = {s, e, t:text.slice(s, e)}; return showFlagOnlyMenu(r.getBoundingClientRect(), 'This coding is submitted. Choose “Edit again” to change your marks.'); } toast('This coding is submitted. Choose “Edit again” to change it.'); return; }
   { const c0 = draft(S.cur);
+    if (canFlag && (screenedOut(c0) || !preDone(c0))) { S.sel = {s, e, t:text.slice(s, e)}; return showFlagOnlyMenu(r.getBoundingClientRect(), screenedOut(c0) ? 'This text is screened out, so no marks are needed.' : 'Marking opens after the prescreening questions below the text.'); }
     if (screenedOut(c0)) { toast('This text is screened out, so no marks are needed. Change the prescreening if that was a mistake.', 4500); return; }
     if (!preDone(c0)) { toast('First read to the end and answer the three prescreening questions below the text.', 4500); const ps = $('#prescreen'); if (ps) { ps.scrollIntoView({block:'start', behavior:'smooth'}); ps.classList.remove('nudge'); void ps.offsetWidth; ps.classList.add('nudge'); } return; } }
   S.sel = {s, e, t:text.slice(s, e)};
@@ -702,6 +708,7 @@ function showTagMenu(rect) {
   pop.innerHTML = `<div class="pop-sel">“${esc(S.sel.t.length > 120 ? S.sel.t.slice(0, 120) + '…' : S.sel.t)}”</div>` + groups.map(g => `
     <div class="pop-g"><span>${g}</span>${g === 'Plot' ? `<span class="mini-seg">plot <button data-act="plot" data-v="1" class="${S.plot === 1 ? 'on' : ''}">1</button><button data-act="plot" data-v="2" class="${S.plot === 2 ? 'on' : ''}">2</button></span>` : ''}</div>
     <div class="pop-gi">${CATS.filter(c => c.grp === g).map(c => `<button class="pop-i" data-act="tag" data-cat="${c.id}"><span class="dot" style="--c:${c.color}"></span>${c.label}<kbd>${c.key.toUpperCase()}</kbd></button>`).join('')}</div>`).join('');
+  if (S.mode === 'shared' && !isPractice(S.cur)) pop.insertAdjacentHTML('beforeend', `<div class="pop-g"><span>Discuss</span></div><div class="pop-gi"><button class="pop-i" data-act="flagsel"><span class="dot" style="--c:#b45309"></span>Flag for discussion<kbd>F</kbd></button></div>`);
   placePop(rect);
 }
 function showCharMenu(cat) {
@@ -761,6 +768,7 @@ function showAnnPop(el) {
       ${lk ? '' : `<button class="ic" data-act="delann" data-id="${a.id}" title="Delete this mark" aria-label="Delete this mark">✕</button>`}
       <input data-annnote="${a.id}" value="${esc(a.note || '')}" placeholder="Add a note to this mark" ${lk ? 'disabled' : ''}>
     </div>`).join('');
+  if (el.dataset.th) $('#pop').insertAdjacentHTML('beforeend', el.dataset.th.split(',').map(id => `<button class="pop-i" data-act="dopen" data-id="${id}"><span class="dot" style="--c:#b45309"></span>Open the discussion on this passage</button>`).join(''));
   placePop(el.getBoundingClientRect());
 }
 function flash(pred) {
@@ -882,12 +890,14 @@ let relCache = {sig:'', res:null};
 function relData() {
   const basis = S.rel.basis, ds = S.rel.ds;
   const arts = corpus().filter(a => (ds === 'all' || a.dataset === ds));
-  const units = arts.map(a => ({a, subs:Object.entries(subsOf(a.key)).map(([uid, s]) => ({uid, c:codingFor(s, basis)}))})).filter(u => u.subs.length >= 2);
-  return {arts, units};
+  let units = arts.map(a => ({a, subs:Object.entries(subsOf(a.key)).map(([uid, s]) => ({uid, c:codingFor(s, basis)}))})).filter(u => u.subs.length >= 2);
+  const early = units.filter(u => discussedEarly(u.a.key)).length;
+  if (S.rel.noDisc) units = units.filter(u => !discussedEarly(u.a.key));
+  return {arts, units, early};
 }
 function computeRel() {
-  const {arts, units} = relData();
-  const sig = S.rel.basis + S.rel.ds + units.map(u => u.a.key + u.subs.map(s => s.uid + (s.c.submittedAt || '')).join()).join('|') + JSON.stringify(S.finals).length;
+  const {arts, units, early} = relData();
+  const sig = S.rel.basis + S.rel.ds + (S.rel.noDisc ? 'nd' : '') + units.map(u => u.a.key + u.subs.map(s => s.uid + (s.c.submittedAt || '')).join()).join('|') + JSON.stringify(S.finals).length;
   if (relCache.sig === sig) return relCache.res;
   const vars = F.map(f => ({f, r:reliability(units.map(u => u.subs.map(s => val(s.c, f.k))), f.num ? 'interval' : 'nominal')}));
   // characters
@@ -914,7 +924,7 @@ function computeRel() {
     for (const k in byCoder[x]) if (byCoder[y][k]) { arts2++; for (const f of F) { const a1 = val(byCoder[x][k], f.k), a2 = val(byCoder[y][k], f.k); if (a1 === '' || a2 === '') continue; t++; if (a1 === a2) ag++; } }
     pair[x + '|' + y] = {p:t ? ag / t : null, n:arts2}; }));
   const nCoders = new Set(units.flatMap(u => u.subs.map(s => coderCodeOf(s.uid) || s.uid))).size;
-  const res = {arts, units, vars, chars, spans, coders, pair, nCoders,
+  const res = {arts, units, early, vars, chars, spans, coders, pair, nCoders,
     perArt:units.map(u => u.subs.length), cn:units.filter(u => u.a.dataset === '1').length, en:units.filter(u => u.a.dataset === '2').length};
   relCache = {sig, res}; return res;
 }
@@ -926,7 +936,8 @@ function viewRel(v) {
   const R = computeRel(); const n = R.units.length; const pair = R.pair;
   const ctrl = `<div class="filters">
       <span class="mini-seg" role="group" aria-label="Basis"><button data-act="relb" data-v="first" class="${S.rel.basis === 'first' ? 'on' : ''}">Independent (first submission)</button><button data-act="relb" data-v="current" class="${S.rel.basis === 'current' ? 'on' : ''}">Latest version</button></span>
-      <span class="mini-seg" role="group" aria-label="Dataset"><button data-act="relds" data-v="all" class="${S.rel.ds === 'all' ? 'on' : ''}">All</button><button data-act="relds" data-v="1" class="${S.rel.ds === '1' ? 'on' : ''}">CN</button><button data-act="relds" data-v="2" class="${S.rel.ds === '2' ? 'on' : ''}">EN</button></span></div>`;
+      <span class="mini-seg" role="group" aria-label="Dataset"><button data-act="relds" data-v="all" class="${S.rel.ds === 'all' ? 'on' : ''}">All</button><button data-act="relds" data-v="1" class="${S.rel.ds === '1' ? 'on' : ''}">CN</button><button data-act="relds" data-v="2" class="${S.rel.ds === '2' ? 'on' : ''}">EN</button></span>
+      ${S.mode === 'shared' ? `<label style="display:flex;gap:6px;align-items:center;font-size:12.5px;color:var(--muted)"><input type="checkbox" data-act="relnodisc" ${S.rel.noDisc ? 'checked' : ''} style="width:auto"> Leave out articles discussed before all coders submitted${R.early && !S.rel.noDisc ? ` (${R.early})` : ''}</label>` : ''}</div>`;
   if (!n) {
     v.innerHTML = `<div class="wide"><div class="wrap"><div class="vh"><div><h2>Intercoder reliability</h2><p>Krippendorff's α for every variable, computed live as codings come in.</p></div><div class="tools">${ctrl}</div></div>
       <div class="card empty"><b>Reliability appears once an article has two submitted codings</b>${R.arts.length} article${R.arts.length === 1 ? '' : 's'} in the corpus, ${corpus().filter(a => Object.keys(subsOf(a.key)).length === 1).length} with one coding so far. Every variable from the Results sheet will get α, a 95% interval, percent agreement and a plain-language verdict here, plus agreement on characters and marked passages and a ready-to-paste methods paragraph.</div>
@@ -974,7 +985,7 @@ function methodsText(R) {
   const lo = Math.min(...R.perArt), hi = Math.max(...R.perArt);
   const basis = S.rel.basis === 'first' ? "Agreement was calculated on the coders' first, independent submissions, before any comparison or discussion." : 'Agreement was calculated on the latest version of each coding.';
   const C = R.chars;
-  return `Intercoder reliability was assessed on ${R.units.length} articles (${R.cn} Chinese-language, ${R.en} English-language), each coded independently by ${lo === hi ? lo : lo + '–' + hi} of ${R.nCoders} trained coders using the NPF codebook. Coders annotated the text passages supporting each code directly in the article. ${basis} Krippendorff's α (nominal metric; interval metric for the number of characters) ranged from ${fmtA(mn.r.a)} (${mn.f.label.toLowerCase()}) to ${fmtA(mx.r.a)} (${mx.f.label.toLowerCase()}), with a median of ${fmtA(med)} across ${ok.length} variables; ${good} variables reached α ≥ .80 and ${tent} reached α ≥ .667 (Krippendorff, 2004).${R.vars.some(x => x.r.novar) ? ' For ' + R.vars.filter(x => x.r.novar).length + ' variable(s) all coders assigned the same value throughout, so α is undefined while agreement is perfect.' : ''} 95% confidence intervals were obtained by bootstrapping articles (1,000 resamples).${C.jaccard != null ? ` For characters, the mean pairwise overlap of identified characters (Jaccard) was ${pct(C.jaccard)}; for characters identified by at least two coders, α was ${fmtA(C.role.a)} for role, ${fmtA(C.level.a)} for level and ${fmtA(C.prc.a)} for PRC affiliation.` : ''} Disagreements were then discussed and resolved to form the consensus dataset used in the analysis.`;
+  return `Intercoder reliability was assessed on ${R.units.length} articles (${R.cn} Chinese-language, ${R.en} English-language), each coded independently by ${lo === hi ? lo : lo + '–' + hi} of ${R.nCoders} trained coders using the NPF codebook. Coders annotated the text passages supporting each code directly in the article. ${basis} Krippendorff's α (nominal metric; interval metric for the number of characters) ranged from ${fmtA(mn.r.a)} (${mn.f.label.toLowerCase()}) to ${fmtA(mx.r.a)} (${mx.f.label.toLowerCase()}), with a median of ${fmtA(med)} across ${ok.length} variables; ${good} variables reached α ≥ .80 and ${tent} reached α ≥ .667 (Krippendorff, 2004).${R.vars.some(x => x.r.novar) ? ' For ' + R.vars.filter(x => x.r.novar).length + ' variable(s) all coders assigned the same value throughout, so α is undefined while agreement is perfect.' : ''} 95% confidence intervals were obtained by bootstrapping articles (1,000 resamples).${C.jaccard != null ? ` For characters, the mean pairwise overlap of identified characters (Jaccard) was ${pct(C.jaccard)}; for characters identified by at least two coders, α was ${fmtA(C.role.a)} for role, ${fmtA(C.level.a)} for level and ${fmtA(C.prc.a)} for PRC affiliation.` : ''} ${S.rel.noDisc ? ' Articles that coders discussed with each other before all of them had submitted their first coding were excluded from this calculation.' : ''} Disagreements were then discussed and resolved to form the consensus dataset used in the analysis.`;
 }
 
 /* ================= ANALYSE view ================= */
@@ -1073,11 +1084,17 @@ function individualSheets() {
     (c.anns || []).slice().sort((p, q) => p.s - q.s).forEach(x => { const ch = (c.chars || []).find(z => z.id === x.c); pas.push([a.id, cc, a.dataset, CM[x.cat].label, CM[x.cat].plot ? (x.p || 1) : '', ch ? (ch.en || ch.name) : '', x.t, x.s, x.e, x.note || '']); });
     memos.push([a.id, cc, s.firstSubmittedAt || '', s.submittedAt || '', s.revisions || 0, s.revisedAfterComparison ? 1 : 0, s.memo || '']);
   });
-  return [['Results', res(cur), [12, 8, 8, 30]], ['Results (independent)', res(first), [12, 8, 8, 30]], ['Characters', chars], ['Passages', pas, [12, 7, 7, 26, 5, 22, 60]], ['Memos', memos], ['Articles', articlesSheet()]];
+  return [['Results', res(cur), [12, 8, 8, 30]], ['Results (independent)', res(first), [12, 8, 8, 30]], ['Characters', chars], ['Passages', pas, [12, 7, 7, 26, 5, 22, 60]], ['Memos', memos], ['Discussions', discussionsSheet(), [10, 10, 10, 8, 20, 10, 40, 80]], ['Articles', articlesSheet()]];
+}
+function discussionsSheet() {
+  const rows = [['Thread','Article ID','Started by','Status','Started','Messages','Passage','Conversation']];
+  Object.values(S.threads).sort((a, b) => a.id - b.id).forEach(t => { const a = art(t.article_key) || {id:t.article_key}; const ms = S.msgs[t.id] || [];
+    rows.push([t.id, a.id, t.coder ? coderIni(t.coder) : 'lead', t.status, t.created_at, ms.length, t.quote || '', ms.map(m => (m.coder ? coderIni(m.coder) : 'lead') + ' (' + String(m.created_at).slice(0, 16).replace('T', ' ') + '): ' + m.body).join('\n')]); });
+  return rows;
 }
 function articlesSheet() {
   const mk = [...new Set(allArticles().flatMap(a => Object.keys(a.meta || {})))];
-  return [['Article ID','Dataset','Ebene','URL','Title','Assigned coders','Due','Submitted codings','Archived', ...mk], ...allArticles().map(a => [a.id, a.dataset, a.ebene || '', a.url || '', a.title || '', (assigned(a) || []).join(','), a.due || '', Object.keys(subsOf(a.key)).length, a.archived ? 1 : 0, ...mk.map(k => (a.meta || {})[k] || '')])];
+  return [['Article ID','Dataset','Ebene','URL','Title','Assigned coders','Due','Submitted codings','Archived','Discussions','Discussed before all submitted', ...mk], ...allArticles().map(a => [a.id, a.dataset, a.ebene || '', a.url || '', a.title || '', (assigned(a) || []).join(','), a.due || '', Object.keys(subsOf(a.key)).length, a.archived ? 1 : 0, threadsFor(a.key).length, threadsFor(a.key).length ? (discussedEarly(a.key) ? 1 : 0) : '', ...mk.map(k => (a.meta || {})[k] || '')])];
 }
 function consensusSheets() {
   const arts = corpus().filter(a => Object.keys(subsOf(a.key)).length);
@@ -1292,6 +1309,7 @@ document.addEventListener('click', async e => {
   if (inTxt && !t) {
     const sel = getSelection(); if (sel && !sel.isCollapsed) return;
     const hl = e.target.closest('.hl'); if (hl && S.view === 'code') { showAnnPop(hl); return; }
+    const fl = e.target.closest('[data-th]'); if (fl && S.view === 'code') { openDrawer('thread', {tid:+fl.dataset.th.split(',')[0]}); return; }
     hidePop(); return;
   }
   if (!t) { if (e.target === $('#modal')) closeModal(); return; }
@@ -1304,6 +1322,18 @@ document.addEventListener('click', async e => {
     case 'open': markSeen(d.key); S.cur = d.key; S.undo = []; S.hidden = {}; S.psEdit = false; S.psWasDone = preDone(draft(d.key)); renderList(); renderReader(); renderPanel(); $('#reader').scrollTop = 0; if (isPhone()) setPane('text'); break;
     case 'next': { const k = nextKey(); if (k) { S.cur = k; S.undo = []; S.hidden = {}; render(); $('#reader').scrollTop = 0; if (isPhone()) setPane('text'); } break; }
     case 'mpane': setPane(d.v); break;
+    case 'discuss': openDrawer('list'); break;
+    case 'flagsel': flagSelection(); break;
+    case 'dnew': S.dsc.tags = null; openDrawer('new', {quote:null}); break;
+    case 'dopen': openDrawer('thread', {tid:+d.id}); { const t = S.threads[+d.id]; if (t) goToThread(t); } break;
+    case 'dfrom': openThreadFromAnywhere(+d.id); break;
+    case 'dback': S.dsc.tags = null; openDrawer('list'); break;
+    case 'dclose': closeDrawer(); break;
+    case 'dpost': t.disabled = true; await postThread(); break;
+    case 'dreply': t.disabled = true; await postReply(); break;
+    case 'dstatus': setThreadStatus(d.v); break;
+    case 'dtag': { const set = S.dsc.tags || (S.dsc.tags = new Set()); set.has(d.v) ? set.delete(d.v) : set.add(d.v); t.classList.toggle('on'); break; }
+    case 'dgo': goToThread(S.threads[+d.id]); if (isPhone()) closeDrawer(); break;
     case 'psedit': S.psEdit = true; renderReader(); setTimeout(() => { const ps = $('#prescreen'); if (ps) ps.scrollIntoView({block:'center', behavior:'smooth'}); }, 30); break;
     case 'psclose': S.psEdit = false; renderReader(); if (isPhone()) setPane('text'); break;
     case 'psgo': { if (isPhone()) setPane('text'); const ps = $('#prescreen'); if (ps) ps.scrollIntoView({block:'center', behavior:'smooth'}); break; }
@@ -1377,6 +1407,7 @@ document.addEventListener('click', async e => {
 document.addEventListener('change', e => {
   const t = e.target;
   if (t.dataset.act === 'final') { saveFinal(t.dataset.key, {values:{[t.dataset.k]:t.value === '' ? '' : +t.value}}).then(() => renderView()); }
+  if (t.dataset.act === 'relnodisc') { S.rel.noDisc = t.checked; relCache.sig = ''; renderView(); return; }
   if (t.dataset.act === 'progopen') { S.prog.onlyOpen = t.checked; renderView(); return; }
   if (t.dataset.act === 'leadview') { S.leadView = t.checked; LS.set('npf:leadView', t.checked); if (t.checked) toast('Lead view on. Code your own articles before you look at them here.', 4000); renderView(); return; }
   if (t.dataset.act === 'anf') { S.an[t.dataset.f] = t.value; renderView(); }
@@ -1412,6 +1443,7 @@ document.addEventListener('keydown', e => {
     const c = draft(u.key); c.anns = u.anns; c.chars = u.chars; S.cur = u.key; changed(); toast('Undone'); return;
   }
   if (typing || e.ctrlKey || e.metaKey || e.altKey || !S.menu) return;
+  if ((S.menu.type === 'tag' || S.menu.type === 'flag') && e.key.toLowerCase() === 'f' && S.mode === 'shared' && !isPractice(S.cur)) { e.preventDefault(); flagSelection(); return; }
   if (S.menu.type === 'tag') { const cat = KEYCAT[e.key.toLowerCase()]; if (cat) { e.preventDefault(); chooseCat(cat); } return; }
   if (S.menu.type === 'char') { const c = draft(S.cur);
     if (e.key === 'Enter' && S.menu.cat === 'char') { e.preventDefault(); newChar(); return; }
@@ -1424,7 +1456,7 @@ document.addEventListener('scroll', e => { if (e.target === $('#pop')) return; i
 
 
 /* ================= roles ================= */
-const APP_VERSION = '2026-11-05b';
+const APP_VERSION = '2026-11-06a';
 const isLead = () => S.mode !== 'shared' || S.isAdmin;
 function allArticles() { return Object.values(S.articles).sort((a, b) => (a.order ?? 1e9) - (b.order ?? 1e9) || String(a.id).localeCompare(String(b.id), undefined, {numeric:true})); }
 function myQueue() { return corpus().filter(a => (assigned(a) || []).includes(String(S.coder))); }
@@ -1497,6 +1529,7 @@ function viewInbox(v) {
       </div>
       ${d ? `<div class="wk-stats"><div><b>${marks.toLocaleString()}</b><span>passages marked</span></div><div><b>${week}</b><span>done this week</span></div>${outN ? `<div><b>${outN}</b><span>screened out</span></div>` : ''}</div>` : ''}
     </section>
+    ${S.mode === 'shared' && Object.keys(S.threads).length ? (() => { const ts = Object.values(S.threads).filter(t => t.status === 'open' || isUnread(t)).sort((a, b) => (isUnread(b) - isUnread(a)) || (mentionsMe(b) - mentionsMe(a)) || String(b.updated_at).localeCompare(String(a.updated_at))); return ts.length ? `<section><div class="sec-t"><h3>Discussions</h3>${unreadThreads().length ? `<span class="badge">${unreadThreads().length} new</span>` : `<span class="tag">${ts.length} open</span>`}</div><div class="wk-list">${discussionCards(ts.slice(0, 8))}</div></section>` : ''; })() : ''}
     ${p >= 1 && n ? `<div class="banner good" style="font-size:14px"><span><b>✓</b> You have finished every article assigned to you. You can still review and change your codings below.</span></div>` : ''}
     <section><div class="sec-t"><h3>To do</h3><span class="tag">${W.todo.length}</span></div>
       ${W.todo.length ? `<div class="wk-list">${W.todo.map(a => card(a, false)).join('')}</div>` : `<div class="card empty" style="padding:18px">${n ? '<b>Nothing left to do</b>Well done.' : '<b>No articles yet</b>Meanwhile, try the practice texts below.'}</div>`}</section>
@@ -1547,6 +1580,156 @@ async function doSetDue(clear) {
   if (S.mode === 'shared') { const {error} = await sb.from('articles').update({due:date, updated_at:now()}).in('key', arts.map(a => a.key)); if (error) { toast('Could not save: ' + error.message); return; } }
   arts.forEach(a => a.due = date); if (S.mode !== 'shared') persistLocal();
   closeModal(); toast((clear ? 'Due date removed for ' : 'Due ' + fmtDay(date) + ' set for ') + arts.length + ' article' + (arts.length === 1 ? '' : 's') + '.'); renderView();
+}
+
+
+/* ================= DISCUSSIONS: flags and threads per article ================= */
+S.threads = {}; S.msgs = {}; S.reads = {}; S.dsc = {open:false, view:'list', tid:null, quote:null, tags:null};
+const myTag = () => S.isAdmin && S.mode === 'shared' ? ['lead', String(S.coder)] : [String(S.coder)];
+async function loadThreads() {
+  if (S.mode !== 'shared') return;
+  const [t, m, r] = await Promise.all([fetchAll('threads', '*'), fetchAll('thread_messages', '*'), fetchAll('thread_reads', '*')]);
+  S.threads = {}; t.forEach(x => S.threads[x.id] = x);
+  S.msgs = {}; m.sort((a, b) => String(a.created_at).localeCompare(String(b.created_at))).forEach(x => (S.msgs[x.thread_id] = S.msgs[x.thread_id] || []).push(x));
+  S.reads = {}; r.filter(x => x.user_id === S.uid).forEach(x => S.reads[x.thread_id] = x.read_at);
+}
+const threadsFor = key => Object.values(S.threads).filter(t => t.article_key === key).sort((a, b) => (a.status === 'open' ? 0 : 1) - (b.status === 'open' ? 0 : 1) || String(b.updated_at).localeCompare(String(a.updated_at)));
+const lastMsg = t => { const m = S.msgs[t.id] || []; return m[m.length - 1]; };
+function isUnread(t) {
+  const ms = (S.msgs[t.id] || []).filter(m => m.user_id !== S.uid); if (!ms.length) return false;
+  const r = S.reads[t.id]; return !r || ms[ms.length - 1].created_at > r;
+}
+function mentionsMe(t) {
+  const mine = myTag();
+  return (t.mentions || []).some(x => mine.includes(String(x))) || (S.msgs[t.id] || []).some(m => m.user_id !== S.uid && (m.mentions || []).some(x => mine.includes(String(x))));
+}
+const unreadThreads = () => Object.values(S.threads).filter(isUnread);
+function discussedEarly(key) {
+  // a discussion started before every coder of this article had submitted for the first time
+  const ts = threadsFor(key); if (!ts.length) return false;
+  const first = ts.map(t => (S.msgs[t.id] || [])[0]).filter(Boolean).map(m => m.created_at).sort()[0] || ts.map(t => t.created_at).sort()[0];
+  const subs = Object.values(subsOf(key));
+  const as = assigned(art(key) || {}) || [];
+  if (subs.length < Math.max(2, as.length)) return true;
+  return subs.some(s => (s.firstSubmittedAt || s.submittedAt || '') > first);
+}
+function peopleFor(key) {
+  const a = art(key); const out = (assigned(a || {}) || []).filter(c => c !== String(S.coder)).map(c => ({tag:c, label:coderIni(c)}));
+  if (!S.isAdmin) out.push({tag:'lead', label:'Project lead'});
+  return out;
+}
+const tagLabel = t => t === 'lead' ? 'Project lead' : coderIni(t);
+const authorLabel = (uid, coder) => uid === S.uid ? 'You' : coder ? coderIni(coder) : 'Project lead';
+function bodyHTML(s) { return esc(s).replace(/(^|\s)@([A-Za-z]{1,4}|lead)\b/g, '$1<b class="at">@$2</b>').replace(/\n/g, '<br>'); }
+function ensureDrawer() { let d = $('#drawer'); if (!d) { d = document.createElement('aside'); d.id = 'drawer'; d.className = 'drawer'; d.hidden = true; d.setAttribute('aria-label', 'Discussion'); document.body.appendChild(d); } return d; }
+function openDrawer(view, opts = {}) {
+  S.dsc = {...S.dsc, open:true, view, ...opts};
+  if (view === 'new' && !S.dsc.tags) S.dsc.tags = new Set(peopleFor(S.cur).filter(p => p.tag !== 'lead').map(p => p.tag));
+  if (view === 'thread' && S.dsc.tid) markRead(S.dsc.tid);
+  renderDrawer();
+}
+function closeDrawer() { S.dsc.open = false; S.dsc.tags = null; S.dsc.quote = null; const d = $('#drawer'); if (d) d.hidden = true; renderReader(); }
+async function markRead(tid) {
+  S.reads[tid] = now(); renderTop();
+  if (S.mode === 'shared') { try { await sb.from('thread_reads').upsert({user_id:S.uid, thread_id:tid, read_at:now()}); } catch {} }
+}
+function tagChips() {
+  const ppl = peopleFor(S.cur); if (!ppl.length) return '';
+  const on = S.dsc.tags || new Set();
+  return `<div class="chips" role="group" aria-label="Tag people">${ppl.map(p => `<button type="button" class="chip ${on.has(p.tag) ? 'on' : ''}" data-act="dtag" data-v="${esc(p.tag)}">@${esc(p.label)}</button>`).join('')}</div>`;
+}
+function renderDrawer() {
+  const d = ensureDrawer(); if (!S.dsc.open) { d.hidden = true; return; }
+  const a = art(S.cur); if (!a) { d.hidden = true; return; }
+  const v = S.dsc.view; d.hidden = false;
+  const head = (title, back) => `<div class="dr-h">${back ? `<button class="ic" data-act="dback" aria-label="Back to all discussions">←</button>` : ''}<b>${title}</b><button class="ic" data-act="dclose" aria-label="Close" style="margin-left:auto">✕</button></div>`;
+  const note = `<p class="small dr-note">Ask about the text or the codebook. Please don't share your own codes before everyone has submitted, so the codings stay independent.</p>`;
+  if (v === 'new') {
+    d.innerHTML = head('New question · ' + esc(a.id), true) + `<div class="dr-b">
+      ${S.dsc.quote ? `<blockquote class="dq" lang="${a.dataset === '1' ? 'zh' : 'en'}">“${esc(S.dsc.quote.t.slice(0, 300))}”</blockquote>` : '<p class="small">About the whole article. To ask about a passage, select it in the text and choose “Flag for discussion”.</p>'}
+      <label class="dl">Your question<textarea id="dmsg" rows="5" placeholder="e.g. Is the provincial government a state-level character here?"></textarea></label>
+      <div class="dl">Tag${tagChips() || '<p class="small">No other coders on this article yet.</p>'}</div>
+      ${note}<button class="btn pri" data-act="dpost">Post question</button></div>`;
+    setTimeout(() => { const t = $('#dmsg'); if (t) t.focus(); }, 30); return;
+  }
+  if (v === 'thread') {
+    const t = S.threads[S.dsc.tid]; if (!t) { S.dsc.view = 'list'; return renderDrawer(); }
+    const ms = S.msgs[t.id] || [];
+    d.innerHTML = head('Discussion · ' + esc(a.id), true) + `<div class="dr-b">
+      <div class="dr-st">${t.status === 'open' ? '<span class="pill warn">open</span>' : '<span class="pill good">resolved</span>'}${(t.mentions || []).length ? `<span class="small" style="margin:0">tagged: ${t.mentions.map(x => '@' + esc(tagLabel(String(x)))).join(' ')}</span>` : ''}</div>
+      ${t.quote ? `<button class="dq dq-btn" data-act="dgo" data-id="${t.id}" lang="${a.dataset === '1' ? 'zh' : 'en'}" title="Show in the text">“${esc(t.quote.slice(0, 300))}”</button>` : ''}
+      <div class="dr-msgs">${ms.map(m => `<div class="dm ${m.user_id === S.uid ? 'me' : ''}"><div class="dm-h"><b>${esc(authorLabel(m.user_id, m.coder))}</b><span>${esc(fmtDate(m.created_at))}</span></div><div class="dm-b">${bodyHTML(m.body)}</div>${(m.mentions || []).length ? `<div class="small" style="margin:2px 0 0">→ ${m.mentions.map(x => '@' + esc(tagLabel(String(x)))).join(' ')}</div>` : ''}</div>`).join('')}</div>
+      <label class="dl">Reply<textarea id="dmsg" rows="3" placeholder="Write a reply"></textarea></label>
+      <div class="dl">Tag (optional)${tagChips()}</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn pri" data-act="dreply">Send</button><button class="btn" data-act="dstatus" data-v="${t.status === 'open' ? 'resolved' : 'open'}">${t.status === 'open' ? 'Mark as resolved' : 'Reopen'}</button></div>
+      ${note}</div>`;
+    const box = d.querySelector('.dr-msgs'); if (box) box.scrollTop = box.scrollHeight;
+    return;
+  }
+  const ts = threadsFor(a.key);
+  d.innerHTML = head('Discussion · ' + esc(a.id), false) + `<div class="dr-b">
+    <button class="btn pri" data-act="dnew" style="width:100%;justify-content:center">Ask a question about this article</button>
+    <p class="small">Or select a passage in the text and choose <b>Flag for discussion</b>${matchMedia('(pointer: coarse)').matches ? '' : ' (key F)'}.</p>
+    ${ts.length ? ts.map(t => { const m0 = (S.msgs[t.id] || [])[0], lm = lastMsg(t), n = (S.msgs[t.id] || []).length;
+      return `<button class="dt ${isUnread(t) ? 'unread' : ''}" data-act="dopen" data-id="${t.id}">
+        <span class="dt-m">${t.status === 'open' ? '<span class="pill warn">open</span>' : '<span class="pill good">resolved</span>'}${isUnread(t) ? '<span class="pill new">new</span>' : ''}<span class="small" style="margin:0 0 0 auto">${esc(ago(t.updated_at))}</span></span>
+        ${t.quote ? `<span class="dt-q">“${esc(t.quote.slice(0, 90))}”</span>` : ''}
+        <span class="dt-b"><b>${esc(authorLabel(m0 ? m0.user_id : t.created_by, m0 ? m0.coder : t.coder))}:</b> ${esc((m0 ? m0.body : '').slice(0, 120))}</span>
+        <span class="small" style="margin:0">${n - 1 > 0 ? (n - 1) + ' repl' + (n - 1 === 1 ? 'y' : 'ies') + ' · last by ' + esc(authorLabel(lm.user_id, lm.coder)) : 'no replies yet'}</span></button>`; }).join('') : '<p class="small">No discussions on this article yet.</p>'}
+  </div>`;
+}
+async function postThread() {
+  const body = $('#dmsg').value.trim(); if (!body) { toast('Write your question first.'); return; }
+  const tags = [...(S.dsc.tags || [])]; const q = S.dsc.quote;
+  if (S.mode !== 'shared') { toast('Discussions work in the shared project.'); return; }
+  const {data, error} = await sb.from('threads').insert({article_key:S.cur, s:q ? q.s : null, e:q ? q.e : null, quote:q ? q.t.slice(0, 1000) : '', mentions:tags}).select().single();
+  if (error) { toast('Could not post: ' + error.message); return; }
+  const r = await sb.from('thread_messages').insert({thread_id:data.id, body, mentions:tags});
+  if (r.error) { toast('Could not post: ' + r.error.message); return; }
+  await loadThreads(); S.dsc.tags = null; S.dsc.quote = null;
+  toast(tags.length ? 'Posted. ' + tags.map(tagLabel).join(', ') + ' will see it in My work.' : 'Posted.');
+  openDrawer('thread', {tid:data.id}); renderReader(); renderTop();
+}
+async function postReply() {
+  const body = $('#dmsg').value.trim(); if (!body) { toast('Write a reply first.'); return; }
+  const tags = [...(S.dsc.tags || [])];
+  const {error} = await sb.from('thread_messages').insert({thread_id:S.dsc.tid, body, mentions:tags});
+  if (error) { toast('Could not send: ' + error.message); return; }
+  if (tags.length) { const t = S.threads[S.dsc.tid]; const m = [...new Set([...(t.mentions || []), ...tags])]; await sb.from('threads').update({mentions:m}).eq('id', t.id); }
+  await loadThreads(); S.dsc.tags = null; openDrawer('thread', {tid:S.dsc.tid});
+}
+async function setThreadStatus(v) {
+  const patch = v === 'resolved' ? {status:v, resolved_by:S.uid, resolved_at:now()} : {status:v, resolved_by:null, resolved_at:null};
+  const {error} = await sb.from('threads').update(patch).eq('id', S.dsc.tid);
+  if (error) { toast('Could not change it: ' + error.message); return; }
+  await loadThreads(); openDrawer('thread', {tid:S.dsc.tid}); renderReader();
+}
+function flagSelection() {
+  if (!S.sel) return; const q = {...S.sel}; hidePop(); getSelection().removeAllRanges(); S.dsc.tags = null;
+  openDrawer('new', {quote:q});
+}
+function showFlagOnlyMenu(rect, why) {
+  S.menu = {type:'flag', rect};
+  $('#pop').innerHTML = `<div class="pop-sel">“${esc(S.sel.t.slice(0, 120))}”</div><p class="small" style="padding:0 6px">${esc(why)}</p>
+    <button class="pop-i" data-act="flagsel"><span class="dot" style="--c:#b45309"></span>Flag for discussion<kbd>F</kbd></button>`;
+  placePop(rect);
+}
+function goToThread(t) {
+  if (S.cur !== t.article_key) { S.cur = t.article_key; S.view = 'code'; render(); }
+  if (t.s != null) setTimeout(() => { const sp = $$('#txt [data-th]').find(x => x.dataset.th.split(',').includes(String(t.id))); if (sp) { sp.scrollIntoView({block:'center', behavior:'smooth'}); sp.classList.remove('flash'); void sp.offsetWidth; sp.classList.add('flash'); } }, 60);
+}
+function openThreadFromAnywhere(id) {
+  const t = S.threads[id]; if (!t) return;
+  markSeen && markSeen(t.article_key);
+  S.cur = t.article_key; S.view = 'code'; S.psEdit = false; render();
+  if (isPhone()) setPane('text');
+  openDrawer('thread', {tid:t.id}); goToThread(t);
+}
+function discussionCards(list) {
+  return list.map(t => { const a = art(t.article_key); if (!a) return ''; const lm = lastMsg(t);
+    return `<article class="wk ${isUnread(t) ? 'is-new' : ''}"><div class="wk-m"><span class="tag">${esc(a.id)}</span>${isUnread(t) ? '<span class="pill new">new</span>' : ''}${mentionsMe(t) ? '<span class="pill warn">you are tagged</span>' : ''}${t.status === 'resolved' ? '<span class="pill good">resolved</span>' : ''}</div>
+      ${t.quote ? `<h3 lang="${a.dataset === '1' ? 'zh' : 'en'}" style="font-size:14.5px">“${esc(t.quote.slice(0, 110))}”</h3>` : ''}
+      <div class="wk-f"><span class="small" style="margin:0">${lm ? '<b>' + esc(authorLabel(lm.user_id, lm.coder)) + ':</b> ' + esc(lm.body.slice(0, 110)) + ' · ' + esc(ago(lm.created_at)) : ''}</span><button class="btn sm pri" data-act="dfrom" data-id="${t.id}">Open</button></div></article>`; }).join('');
 }
 
 /* ================= lead data ================= */
@@ -1607,6 +1790,7 @@ function viewProgress(v) {
       <div class="tw" style="max-height:460px;overflow:auto;margin-top:10px"><table><thead><tr><th>Article</th><th>Data</th><th>Due</th>${P.coders.map(m => `<th class="n" style="text-align:center">${esc(coderIni(m.coder))}</th>`).join('')}</tr></thead><tbody>
       ${artRows.slice(0, 400).map(a => `<tr><td><button class="link" data-act="gocode" data-key="${esc(a.key)}">${esc(a.id)}</button> <span style="color:var(--muted);font-size:12px">${esc((a.title || '').slice(0, 50))}</span></td><td>${a.dataset === '1' ? 'CN' : 'EN'}</td><td style="white-space:nowrap">${a.due ? duePill(a, P.need(a).length && P.need(a).every(c => P.st[c] && P.st[c][a.key] && P.st[c][a.key].status === 'submitted')) : '<span class="small" style="margin:0">–</span>'}</td>
         ${P.coders.map(m => `<td style="text-align:center">${P.need(a).includes(String(m.coder)) ? sym(P.st[m.coder] && P.st[m.coder][a.key]) : ''}</td>`).join('')}</tr>`).join('') || `<tr><td colspan="${P.coders.length + 3}" style="color:var(--muted)">${P.arts.length ? 'Every article is fully coded.' : 'No articles yet.'}</td></tr>`}</tbody></table></div></div>
+    ${S.mode === 'shared' ? (() => { const ts = Object.values(S.threads).filter(t => t.status === 'open').sort((a, b) => String(b.updated_at).localeCompare(String(a.updated_at))); return `<div class="card"><h3>Open discussions</h3><p class="sub">Questions coders raised while coding. Articles discussed before all their coders submitted are marked in Reliability.</p>${ts.length ? `<div class="wk-list">${discussionCards(ts.slice(0, 20))}</div>` : '<p class="small">No open discussions.</p>'}</div>`; })() : ''}
     <div class="card"><h3>Feedback and bug reports</h3><p class="sub">Sent by coders with the Feedback button. The app adds where they were and which device they used.</p>
       ${S.mode !== 'shared' ? '<p class="small">Feedback works in the shared project.</p>' : fb.length ? fb.map(x => `<div class="psg"><div class="psg-m"><span class="pill ${x.kind === 'bug' ? 'bad' : x.kind === 'idea' ? 'good' : 'na'}">${x.kind}</span><b style="color:var(--ink)">${esc(x.coder ? coderIni(x.coder) : x.email)}</b><span>${esc(fmtDate(x.created_at))}</span>${x.context && x.context.article ? `<span>· article ${esc(x.context.article)}</span>` : ''}${x.context && x.context.view ? `<span>· ${esc(x.context.view)} view</span>` : ''}${x.context && x.context.device ? `<span>· ${esc(x.context.device)}</span>` : ''}
           <button class="btn sm" style="margin-left:auto" data-act="fbstatus" data-id="${x.id}" data-v="${x.status === 'open' ? 'done' : 'open'}">${x.status === 'open' ? 'Mark as done' : 'Reopen'}</button></div>
@@ -1825,6 +2009,7 @@ function soft() {
   render();
 }
 let lastSync = Date.now();
+async function threadsChanged() { await loadThreads(); const ae = document.activeElement; if (S.dsc.open && !(ae && $('#drawer') && $('#drawer').contains(ae) && ae.tagName === 'TEXTAREA')) renderDrawer(); }
 function subscribeRealtime() {
   const t = {}; const later = (n, fn) => { clearTimeout(t[n]); t[n] = setTimeout(async () => { try { await fn(); lastSync = Date.now(); soft(); } catch {} }, 600); };
   sb.channel('npf-live')
@@ -1833,6 +2018,10 @@ function subscribeRealtime() {
     .on('postgres_changes', {event:'*', schema:'public', table:'finals'}, () => later('f', loadFinals))
     .on('postgres_changes', {event:'*', schema:'public', table:'members'}, () => later('m', loadMembers))
     .on('postgres_changes', {event:'*', schema:'public', table:'feedback'}, () => later('fb', loadFeedback))
+    .on('postgres_changes', {event:'*', schema:'public', table:'threads'}, () => later('th', threadsChanged))
+    .on('postgres_changes', {event:'INSERT', schema:'public', table:'thread_messages'}, pl => {
+      const m = pl.new || {}; if (m.user_id !== S.uid && (m.mentions || []).some(x => myTag().includes(String(x)))) toast((m.coder ? coderIni(m.coder) : 'The project lead') + ' tagged you in a discussion. See My work.', 6000);
+      later('th', threadsChanged); })
     .subscribe();
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible' && S.mode === 'shared' && Date.now() - lastSync > 60000) later('all', async () => { await Promise.all([loadMembers(), loadSubs(), loadFinals()]); });
@@ -1893,6 +2082,7 @@ async function enter(session) {
   else if (corpus().length && isPractice(S.cur) && LS.get('npf:practiced', false)) S.cur = (nextKey() || S.cur);
   try { const r = await sb.from('app_config').select('value').eq('key', 'codebook').maybeSingle(); if (r.data && r.data.value) CB = {defs:SHOW_CODEBOOK ? (r.data.value.defs || []) : [], headers:r.data.value.headers || [], legend:r.data.value.legend || []}; } catch {}
   document.documentElement.classList.toggle('nocb', !(SHOW_CODEBOOK && CB.defs.length));
+  try { await loadThreads(); } catch {}
   if (S.isAdmin) { try { await loadFeedback(); } catch {} S.view = 'progress'; } else S.view = 'inbox';
   subscribeRealtime(); entering = false; render();
   if (!S.coder) toast(S.isAdmin ? 'Give yourself a coder number under Team.' : 'You have no coder number yet. The project lead sets it under Team.', 5000);

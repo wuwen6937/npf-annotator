@@ -13,6 +13,8 @@ It runs in any browser and on phones, and can be added to the home screen like a
 
 **Step 1 is always the prescreening.** Coders answer three questions (topical relevance, characters, plot) above the text before they can mark anything. If the text is not relevant, or has neither characters nor a plot, they submit the prescreening and are done; the remaining columns stay empty in every export.
 
+**Discussions:** while coding, a coder can flag a passage (or ask about the whole article) and tag the other coders of that article or the lead. Threads appear in everyone's *My work*. Only people assigned to the article and the lead can read them. Reliability can leave out articles that were discussed before all coders had submitted.
+
 Coders never see each other's work; only the project lead can compare. The database enforces this, not just the screen. Articles that already have codings cannot be deleted, only archived.
 
 **Safety copies:** the database copies all codings every night (kept 30 days) and makes a full copy including article texts every Sunday (last 6 kept). The lead can download any copy under *Progress*, and should also download a backup file now and then to keep outside Supabase.

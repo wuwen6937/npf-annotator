@@ -372,3 +372,26 @@ drop policy if exists app_config_read on public.app_config;
 drop policy if exists app_config_write on public.app_config;
 create policy app_config_read on public.app_config for select to authenticated using ((select is_lead()) or ((select is_member()) and key = 'codebook'));
 create policy app_config_write on public.app_config for all to authenticated using ((select is_lead())) with check ((select is_lead()));
+
+-- ================================================================ discussions: flags and threads per article (2026-11-06)
+-- see migration "discussion_threads": tables threads, thread_messages, thread_reads; functions can_see_article,
+-- thread_visible, discuss_before, discuss_after_message; only coders assigned to an article (and the lead) can read or post.
+create or replace function public.can_see_article(k text) returns boolean language sql stable security definer set search_path = public as $$
+  select is_lead() or exists (select 1 from articles a where a.key = k and not a.archived and my_coder() = any(a.coders))
+$$;
+create table if not exists public.threads (id bigserial primary key, article_key text not null references public.articles(key) on delete restrict, created_by uuid default auth.uid(), coder text, s int, e int, quote text not null default '', status text not null default 'open' check (status in ('open','resolved')), mentions text[] not null default '{}', created_at timestamptz not null default now(), updated_at timestamptz not null default now(), resolved_by uuid, resolved_at timestamptz);
+create table if not exists public.thread_messages (id bigserial primary key, thread_id bigint not null references public.threads(id) on delete cascade, user_id uuid default auth.uid(), coder text, body text not null check (length(body) between 1 and 4000), mentions text[] not null default '{}', created_at timestamptz not null default now());
+create table if not exists public.thread_reads (user_id uuid not null default auth.uid(), thread_id bigint not null references public.threads(id) on delete cascade, read_at timestamptz not null default now(), primary key (user_id, thread_id));
+create or replace function public.thread_visible(t bigint) returns boolean language sql stable security definer set search_path = public as $$
+  select exists (select 1 from threads x where x.id = t and can_see_article(x.article_key))
+$$;
+alter table public.threads enable row level security; alter table public.thread_messages enable row level security; alter table public.thread_reads enable row level security;
+drop policy if exists threads_read on public.threads; create policy threads_read on public.threads for select to authenticated using (can_see_article(article_key));
+drop policy if exists threads_insert on public.threads; create policy threads_insert on public.threads for insert to authenticated with check (created_by = (select auth.uid()) and can_see_article(article_key));
+drop policy if exists threads_update on public.threads; create policy threads_update on public.threads for update to authenticated using (can_see_article(article_key)) with check (can_see_article(article_key));
+drop policy if exists threads_delete on public.threads; create policy threads_delete on public.threads for delete to authenticated using ((select is_lead()));
+drop policy if exists msgs_read on public.thread_messages; create policy msgs_read on public.thread_messages for select to authenticated using (thread_visible(thread_id));
+drop policy if exists msgs_insert on public.thread_messages; create policy msgs_insert on public.thread_messages for insert to authenticated with check (user_id = (select auth.uid()) and thread_visible(thread_id));
+drop policy if exists msgs_delete on public.thread_messages; create policy msgs_delete on public.thread_messages for delete to authenticated using ((select is_lead()));
+drop policy if exists reads_own on public.thread_reads; create policy reads_own on public.thread_reads for all to authenticated using (user_id = (select auth.uid())) with check (user_id = (select auth.uid()) and thread_visible(thread_id));
+revoke all on public.threads, public.thread_messages, public.thread_reads from anon;
