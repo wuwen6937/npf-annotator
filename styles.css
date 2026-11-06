@@ -380,3 +380,65 @@ img{max-width:100%}
 .dt-q{font:13.5px/1.5 var(--read);color:var(--muted)}
 .dt-b{font-size:13.5px}
 @media (max-width:860px){.drawer{width:100vw;border-left:0}}
+
+/* ---------- compare: text beside the comparison ---------- */
+.cmpx{display:grid;grid-template-columns:220px minmax(0,1.05fr) minmax(0,1fr);flex:1;min-height:0}
+.cx-tabs{display:none}
+.cx-list{border-right:1px solid var(--line);padding:14px 12px 24px 0;display:grid;gap:3px;align-content:start}
+.cx-text{position:relative;padding:0 28px 80px;border-right:1px solid var(--line)}
+.cx-th{position:sticky;top:0;z-index:2;background:var(--bg);padding:14px 0 10px;border-bottom:1px solid var(--line);display:grid;gap:7px}
+.cx-pick{display:none}
+.cx-title{font:600 19px/1.35 var(--read);margin:0}
+.cx-now{font-size:13px;color:var(--muted)} .cx-now b{color:var(--ink)}
+.cx-leg{display:flex;gap:6px 14px;flex-wrap:wrap;font-size:12.5px;color:var(--muted);align-items:center}
+.cx-leg span{display:inline-flex;align-items:center;gap:5px} .cx-leg b{color:var(--ink);font-weight:600}
+.cx-key{margin-left:auto;font-size:12px}
+.cx-key .cxm{font-style:normal;padding:0 3px;border-radius:2px}
+.cx-cats .chip{font-size:11.5px}
+.cx-txt{padding-top:16px;font-size:16.5px;line-height:2}
+.cdot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px;vertical-align:baseline;flex:none}
+.cxm{-webkit-box-decoration-break:clone;box-decoration-break:clone;border-radius:2px 2px 0 0}
+.cxm.all{background:color-mix(in srgb,var(--accent) 9%,transparent)}
+.cxm.some{background:color-mix(in srgb,var(--warn) 20%,transparent)}
+.cxm.flash{animation:cxf 1.2s ease-out}
+@keyframes cxf{0%,35%{outline:2px solid var(--warn);outline-offset:2px}}
+@media (prefers-reduced-motion:reduce){.cxm.flash{animation:none}}
+.cx-cmp{padding:0 22px 80px 22px;display:grid;gap:14px;align-content:start;background:var(--panel)}
+.cx-cmp .card{background:var(--bg)}
+.cx-bar{position:sticky;top:0;z-index:2;background:var(--panel);padding:14px 0 10px;border-bottom:1px solid var(--line);display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between}
+.cx-sum{display:grid;gap:2px;font-size:13px} .cx-sum span{color:var(--muted);font-size:12.5px}
+.cx-rev{font-size:12px!important}
+.cx-nav{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.cx-only{display:flex;gap:6px;align-items:center;font-size:12.5px;color:var(--muted);margin-left:6px;cursor:pointer}
+.cx-only input{width:auto}
+.cx-tab th{white-space:nowrap}
+.selrow{cursor:pointer}
+.selrow:hover td{background:var(--sunk)}
+.selrow.sel td{background:var(--accent-soft)!important}
+.selrow.sel td:first-child{box-shadow:inset 3px 0 0 var(--accent);font-weight:600}
+.selrow:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+@media (max-width:1180px){
+  .cmpx{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+  .cx-list{display:none}
+  .cx-pick{display:block} .cx-pick select{width:100%}
+}
+@media (max-width:860px){
+  .cmpx{display:block}
+  .cx-tabs{display:flex;gap:4px;position:sticky;top:env(safe-area-inset-top,0px);z-index:6;background:var(--bg);padding:8px 0;border-bottom:1px solid var(--line)}
+  .cx-tabs button{flex:1;padding:9px 6px;border-radius:8px;font-weight:500;color:var(--muted);background:var(--sunk);display:flex;gap:6px;justify-content:center;align-items:center}
+  .cx-tabs button.on{background:var(--ink);color:var(--bg)}
+  .cmpx[data-pane="text"] .cx-cmp,.cmpx[data-pane="cmp"] .cx-text{display:none}
+  .cx-text{padding:0 0 40px;border-right:0}
+  .cx-cmp{padding:0 0 40px;background:none}
+  .cx-th,.cx-bar{position:static}
+  .cx-key{margin-left:0}
+}
+.cx-tab select{width:auto;max-width:150px;font-size:12px;padding:3px 6px}
+.cx-tab td,.cx-tab th{padding-inline:8px}
+.cx-mnow{display:none}
+@media (max-width:860px){
+  .cx-mnow{display:flex;gap:6px;align-items:center;position:sticky;top:calc(env(safe-area-inset-top,0px) + 54px);z-index:5;background:var(--bg);padding:6px 0;border-bottom:1px solid var(--line);font-size:13px;font-weight:600}
+  .cx-mnow span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .cx-mnow .btn{min-width:38px;min-height:34px}
+}
+@media (max-width:860px){.cmpx .pane{overflow:visible}}

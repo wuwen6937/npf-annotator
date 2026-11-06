@@ -143,7 +143,7 @@ const S = {
   practiceSubs:{},
   view:'code', cur:'practice-en', plot:1, mpane:'text', members:[], email:'', auth:{}, hidden:{},
   list:{q:'', f:'all'}, rel:{basis:'first', ds:'all'}, an:{tab:'passages', cat:'', ds:'all', coder:'all', q:''},
-  cmp:{key:null, cat:'char'}, sync:{s:'idle', msg:'This browser only'},
+  cmp:{key:null, sel:null, onlyDiff:false, pane:'text', scroll:false}, sync:{s:'idle', msg:'This browser only'},
   hintOff:LS.get('npf:hintOff', false), leadView:LS.get('npf:leadView', false), sel:null, menu:null, undo:[], loaded:{}
 };
 PRACTICE.forEach(a => S.practiceArt = Object.assign(S.practiceArt || {}, {[a.key]: a}));
@@ -804,77 +804,174 @@ function leadToggle() {
   if (!S.isAdmin) return '';
   return `<label style="display:flex;gap:8px;align-items:center;font-size:12.5px;color:var(--muted);cursor:pointer"><input type="checkbox" data-act="leadview" ${S.leadView ? 'checked' : ''} style="width:auto"> Lead view: show all codings, including articles I have not coded yet</label>`;
 }
+/* Compare: text stays visible; selecting a variable shows each coder's marks for it in the text */
+const CCOL = ['#0f766e', '#c2410c', '#7c3aed', '#2563eb', '#be185d', '#4d7c0f', '#a16207'];
+function cmpSpec(sel, groups) {
+  if (!sel) return null;
+  if (sel.type === 'cat') return {cats:[sel.cat], label:CM[sel.cat].label};
+  if (sel.type === 'ch') { const g = groups[sel.gi]; return g ? {group:g, cats:[], label:'Character: ' + g.label} : null; }
+  const f = FM[sel.k]; if (!f) return null;
+  if (f.cat) return {cats:[f.cat], plot:f.plot || null, label:f.label};
+  if (f.ptype) return {cats:['pos', 'neg', 'tech'], plot:f.ptype, label:f.label};
+  if (f.k === 'pl2') return {cats:['tech', 'pos', 'neg'], plot:2, label:f.label};
+  if (f.k === 'p2' || f.fromChars) return {cats:['char', 'action'], label:f.label};
+  if (f.k === 'p3') return {cats:['pos', 'neg', 'tech'], label:f.label};
+  return {cats:[], label:f.label, none:true};
+}
+function cmpAnns(c, uid, spec) {
+  if (!spec || spec.none) return [];
+  if (spec.group) { const m = spec.group.members[uid]; return m ? (c.anns || []).filter(a => (a.cat === 'char' || a.cat === 'action') && a.c === m.ch.id) : []; }
+  return (c.anns || []).filter(a => spec.cats.includes(a.cat) && (!spec.plot || (a.p || 1) === spec.plot));
+}
+function cmpText(a, uids, subs, spec) {
+  const per = uids.map(u => cmpAnns(subs[u], u, spec));
+  const ivs = per.map(l => mergeIv(l.map(x => [x.s, x.e])));
+  const pts = new Set([0, a.text.length]); ivs.forEach(iv => iv.forEach(([s, e]) => { pts.add(s); pts.add(e); }));
+  const arr = [...pts].sort((x, y) => x - y); let h = '';
+  for (let i = 0; i < arr.length - 1; i++) {
+    const s = arr[i], e = arr[i + 1]; if (e <= s) continue;
+    const who = uids.map((u, j) => ivs[j].some(([x, y]) => x <= s && y >= e) ? j : -1).filter(j => j >= 0);
+    const seg = esc(a.text.slice(s, e));
+    if (!who.length) { h += seg; continue; }
+    const cats = [...new Set(who.flatMap(j => per[j].filter(x => x.s < e && x.e > s).map(x => CM[x.cat].short)))];
+    const shadow = who.map((j, n) => `inset 0 -${3 * (n + 1)}px 0 ${CCOL[j % CCOL.length]}`).join(',');
+    h += `<span class="cxm ${who.length === uids.length ? 'all' : 'some'}" style="box-shadow:${shadow};padding-bottom:${3 * who.length}px" title="${esc('Marked by ' + who.map(j => coderLabel(uids[j])).join(', ') + (cats.length ? ' · ' + cats.join(', ') : ''))}">${seg}</span>`;
+  }
+  // overlap between coders for what is shown (mean pairwise, same formula as span agreement)
+  let sum = 0, n = 0;
+  for (let i = 0; i < ivs.length; i++) for (let j = i + 1; j < ivs.length; j++) { const la = ivLen(ivs[i]), lb = ivLen(ivs[j]); if (!la && !lb) continue; sum += 2 * ivOverlap(ivs[i], ivs[j]) / (la + lb); n++; }
+  return {html:h, counts:per.map(l => l.length), overlap:n ? sum / n : null};
+}
+function cmpRoleSame(g, uids) {
+  const mem = Object.values(g.members); const roles = mem.map(m => cv(m.c, m.ch, 'role')).filter(x => x !== '');
+  return mem.length === uids.length && roles.length === mem.length && roles.every(r => r === roles[0]);
+}
+function cmpDiffs(uids, subs, groups) {
+  const out = [];
+  for (const f of F) { const vs = uids.map(u => val(subs[u], f.k)).filter(x => x !== ''); if (vs.length >= 2 && !vs.every(x => x === vs[0])) out.push({type:'var', k:f.k}); }
+  if (uids.length >= 2) groups.forEach((g, gi) => { if (!cmpRoleSame(g, uids)) out.push({type:'ch', gi}); });
+  return out;
+}
+const selKey = s => !s ? '' : s.type === 'var' ? 'v:' + s.k : s.type === 'cat' ? 'c:' + s.cat : 'g:' + s.gi;
+function cmpModel(key) {
+  const subs = subsOf(key); const uids = Object.keys(subs);
+  const groups = alignChars(uids.map(u => ({uid:u, c:subs[u]})));
+  return {subs, uids, groups, diffs:cmpDiffs(uids, subs, groups)};
+}
 function viewCompare(v) {
   const eligible = [...PRACTICE, ...corpus()].filter(a => Object.keys(subsOf(a.key)).length >= 1 && canSeeOthers(a.key));
-  if (!S.cmp.key || !eligible.find(a => a.key === S.cmp.key)) S.cmp.key = eligible[0] ? eligible[0].key : null;
-  const key = S.cmp.key;
-  if (key) { const d = draft(key, false); if (d && !d.sawOthers && Object.keys(subsOf(key)).length > 1) { d.sawOthers = true; queueSave(key); } }
-  const left = eligible.map(a => {
-    const subs = Object.values(subsOf(a.key)); const ag = articleAgreement(subs);
-    return `<button class="art ${key === a.key ? 'on' : ''}" data-act="cmpopen" data-key="${esc(a.key)}"><span class="st ${ag == null ? '' : ag >= .9 ? 'done' : 'draft'}"></span><span class="art-id">${esc(a.id)}</span><span class="tag">${subs.length} coder${subs.length > 1 ? 's' : ''}</span><span class="art-t">${ag == null ? 'Waiting for a second coder' : pct(ag) + ' of variables agree'}</span></button>`;
+  if (!S.cmp.key || !eligible.find(a => a.key === S.cmp.key)) { S.cmp.key = eligible[0] ? eligible[0].key : null; S.cmp.sel = null; }
+  const key = S.cmp.key; S.cmp.pane = S.cmp.pane || 'text';
+  if (!key) {
+    v.innerHTML = `<div class="wide"><div class="wrap"><div class="vh"><div><h2>Compare codings</h2><p>Every coder's codes for one article, next to the text.</p></div><div class="tools">${leadToggle()}</div></div>
+      <div class="card empty"><b>Nothing to compare yet</b>Submit a coding first. Try the English practice text: two example coders are waiting there.</div></div></div>`;
+    return;
+  }
+  { const d = draft(key, false); if (d && !d.sawOthers && Object.keys(subsOf(key)).length > 1) { d.sawOthers = true; queueSave(key); } }
+  const a = art(key); const {subs, uids, groups, diffs} = cmpModel(key);
+  if (!S.cmp.sel || (S.cmp.sel.type === 'ch' && !groups[S.cmp.sel.gi]))
+    S.cmp.sel = diffs.find(x => x.type === 'ch' || !cmpSpec(x, groups).none) || {type:'cat', cat:'char'};
+  const sel = S.cmp.sel, spec = cmpSpec(sel, groups), sk = selKey(sel);
+  const T = cmpText(a, uids, subs, spec);
+  const cs = consensus(key); const fin = S.finals[key] || {};
+  const canResolve = S.isAdmin && !a.practice;
+  const onlyDiff = !!S.cmp.onlyDiff;
+  const zh = a.dataset === '1' ? 'zh' : 'en';
+  const dot = u => `<i class="cdot" style="background:${CCOL[uids.indexOf(u) % CCOL.length]}"></i>`;
+  const list = eligible.map(x => { const ss = Object.values(subsOf(x.key)); const ag = articleAgreement(ss);
+    return `<button class="art ${key === x.key ? 'on' : ''}" data-act="cmpopen" data-key="${esc(x.key)}"><span class="st ${ag == null ? '' : ag >= .9 ? 'done' : 'draft'}"></span><span class="art-id">${esc(x.id)}</span><span class="tag">${ss.length}</span><span class="art-t">${ag == null ? 'Waiting for a second coder' : pct(ag) + ' of variables agree'}</span></button>`; }).join('');
+  // codes table
+  let rows = '', lastSec = '';
+  for (const f of F) {
+    const vs = uids.map(u => val(subs[u], f.k)); const filled = vs.filter(x => x !== '');
+    const agree = filled.length < 2 ? null : filled.every(x => x === filled[0]);
+    if (onlyDiff && agree !== false) continue;
+    if (f.sec !== lastSec) { rows += `<tr class="grp"><td colspan="${uids.length + 3}">${esc(f.sec)}</td></tr>`; lastSec = f.sec; }
+    const kind = fieldKind(f);
+    const consCell = canResolve ? `<select data-act="final" data-key="${esc(key)}" data-k="${f.k}" aria-label="Consensus for ${esc(f.label)}">
+        <option value="">${cs.src[f.k] === 'resolved' ? 'Majority' : cs.src[f.k] === 'tie' ? 'Tie: choose' : 'Majority: ' + esc(lab(kind, cs.values[f.k]))}</option>
+        ${(kind === 'num' ? [...new Set(filled)].map(x => [x, String(x)]) : OPT[kind]).map(([vv, l]) => `<option value="${vv}" ${fin.values && fin.values[f.k] === vv ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>`
+      : `${esc(lab(kind, cs.values[f.k]))}`;
+    rows += `<tr class="selrow ${agree === false ? 'dis' : ''} ${sk === 'v:' + f.k ? 'sel' : ''}" data-act="cmpsel" data-t="var" data-k="${f.k}" tabindex="0" aria-selected="${sk === 'v:' + f.k}">
+      <td>${esc(f.label)}</td>${vs.map(x => `<td>${esc(kind === 'num' ? (x === '' ? '–' : x) : lab(kind, x))}</td>`).join('')}
+      <td>${agree == null ? '<span class="pill na">n/a</span>' : agree ? '<span class="pill good">agree</span>' : '<span class="pill warn">differs</span>'}</td><td>${consCell}</td></tr>`;
+  }
+  const chRows = groups.map((g, gi) => {
+    const mem = Object.values(g.members); const same = cmpRoleSame(g, uids);
+    if (onlyDiff && same) return '';
+    const cells = uids.map(u => { const m = g.members[u]; if (!m) return '<td style="color:var(--faint)">not coded</td>';
+      const vv = cv(m.c, m.ch, 'valid');
+      return `<td><b>${esc(m.ch.en || m.ch.name)}</b><br><span style="font-size:12px;color:var(--muted)">${vv === 1 ? `${lab('role', cv(m.c, m.ch, 'role'))} · ${lab('level', cv(m.c, m.ch, 'level'))} · PRC ${lab('bin', cv(m.c, m.ch, 'prc'))}` : vv === 0 ? 'not valid' : 'validity open'}</span></td>`; }).join('');
+    return `<tr class="selrow ${same ? '' : 'dis'} ${sk === 'g:' + gi ? 'sel' : ''}" data-act="cmpsel" data-t="ch" data-k="${gi}" tabindex="0" aria-selected="${sk === 'g:' + gi}"><td>${esc(g.label)}</td>${cells}<td>${same ? '<span class="pill good">agree</span>' : mem.length < uids.length ? '<span class="pill warn">not found by all</span>' : '<span class="pill warn">role differs</span>'}</td></tr>`;
   }).join('');
-  v.innerHTML = `<div class="wide"><div class="wrap" style="max-width:1280px">
-    <div class="vh"><div><h2>Compare codings</h2><p>Side-by-side view of every coder's codes for one article. You see other coders' work only after you have submitted your own, so first codings stay independent.</p></div><div class="tools">${leadToggle()}</div></div>
-    <div class="cmp"><div class="cmp-l">${left || '<div class="empty" style="padding:16px"><b>Nothing to compare yet</b>Submit a coding first. Try the English practice text: two example coders are waiting there.</div>'}</div>
-    <div style="display:grid;gap:16px;min-width:0">${key ? compareBody(key) : ''}</div></div></div></div>`;
+  const di = diffs.findIndex(x => selKey(x) === sk);
+  const nV = diffs.filter(x => x.type === 'var').length, nC = diffs.filter(x => x.type === 'ch').length;
+  const revs = uids.map(u => subs[u].revisions ? `${esc(coderLabel(u))} revised ${subs[u].revisions}×${subs[u].revisedAfterComparison ? ' after comparing' : ''}` : '').filter(Boolean).join(' · ');
+  const same = S.cmp.lastKey === key, keep = same ? ['.cx-list', '#cxText', '.cx-cmp'].map(q => { const el = $(q); return el ? el.scrollTop : 0; }) : null;
+  S.cmp.lastKey = key;
+  v.innerHTML = `<nav class="cx-tabs" aria-label="Panes"><button data-act="cxpane" data-v="text" class="${S.cmp.pane === 'text' ? 'on' : ''}">Text</button><button data-act="cxpane" data-v="cmp" class="${S.cmp.pane === 'cmp' ? 'on' : ''}">Comparison${diffs.length ? ` <span class="badge">${diffs.length}</span>` : ''}</button></nav>
+  <div class="cmpx" data-pane="${S.cmp.pane}">
+    <aside class="cx-list pane" aria-label="Articles"><div class="grp-l" style="margin-top:0">Articles</div>${list}<div style="margin-top:14px">${leadToggle()}</div></aside>
+    <section class="cx-text pane" id="cxText" aria-label="Article text">
+      <div class="cx-mnow"><span>${esc(spec ? spec.label : '–')}</span><button class="btn sm" data-act="cmpstep" data-d="-1" ${diffs.length ? '' : 'disabled'} aria-label="Previous difference">‹</button><button class="btn sm pri" data-act="cmpstep" data-d="1" ${diffs.length ? '' : 'disabled'} aria-label="Next difference">›</button></div>
+      <div class="cx-th">
+        <div class="cx-pick"><select data-act="cmppick" aria-label="Article">${eligible.map(x => `<option value="${esc(x.key)}" ${x.key === key ? 'selected' : ''}>${esc(x.id)} · ${esc((x.title || '').slice(0, 50))}</option>`).join('')}</select></div>
+        <div class="rd-meta"><span class="tag">${esc(a.id)}</span><span>${a.dataset === '1' ? 'Chinese' : 'English'}</span>${metaLine(a)}${a.practice ? '<span class="pill na">practice</span>' : ''}</div>
+        <h2 class="cx-title" lang="${zh}">${esc(a.title || a.id)}</h2>
+        <div class="cx-now">In the text: <b>${esc(spec ? spec.label : '–')}</b>${T.overlap != null ? ` · coders' marks overlap <b>${pct(T.overlap)}</b>` : ''}</div>
+        <div class="cx-leg">${uids.map((u, j) => `<span title="${T.counts[j]} marked passage${T.counts[j] === 1 ? '' : 's'}">${dot(u)}${esc(coderLabel(u))} <b>${T.counts[j]}</b></span>`).join('')}${uids.length > 1 ? '<span class="cx-key"><i class="cxm some">tinted</i> = not marked by everyone</span>' : ''}</div>
+        <div class="chips cx-cats" aria-label="Show a category">${CATS.filter(c => c.id !== 'note').map(c => `<button class="chip ${sk === 'c:' + c.id ? 'on' : ''}" data-act="cmpsel" data-t="cat" data-k="${c.id}">${c.short}</button>`).join('')}</div>
+      </div>
+      ${spec && spec.none ? `<div class="banner warn" style="margin:12px 0 0">${esc(spec.label)} is judged from the whole text, so there are no marked passages to compare. Read the text below.</div>` : ''}
+      <div class="txt cx-txt" lang="${zh}">${T.html}</div>
+    </section>
+    <section class="cx-cmp pane" aria-label="Comparison">
+      <div class="cx-bar">
+        <div class="cx-sum"><b>${diffs.length ? diffs.length + ' difference' + (diffs.length > 1 ? 's' : '') : uids.length > 1 ? 'No differences' : 'One coding so far'}</b><span> ${nV} variable${nV === 1 ? '' : 's'} · ${nC} character${nC === 1 ? '' : 's'} · ${uids.length} coding${uids.length === 1 ? '' : 's'}</span>${revs ? `<span class="cx-rev">${revs}</span>` : ''}</div>
+        <div class="cx-nav">
+          <button class="btn sm" data-act="cmpstep" data-d="-1" ${diffs.length ? '' : 'disabled'} aria-label="Previous difference">‹</button>
+          <button class="btn sm pri" data-act="cmpstep" data-d="1" ${diffs.length ? '' : 'disabled'}>${di >= 0 ? `Difference ${di + 1} of ${diffs.length} ›` : 'Next difference ›'}</button>
+          <label class="cx-only"><input type="checkbox" data-act="cmponly" ${onlyDiff ? 'checked' : ''}> Only differences</label>
+        </div>
+      </div>
+      <div class="card"><h3>Codes</h3><p class="sub">Click a row to see in the text which passages each coder marked for it.${canResolve ? ' Set the consensus after discussion; until then the majority is used.' : ''}</p>
+        <div class="tw"><table class="cx-tab"><thead><tr><th>Variable</th>${uids.map(u => `<th>${dot(u)}${esc(coderLabel(u))}</th>`).join('')}<th>Agreement</th><th>Consensus</th></tr></thead><tbody>${rows || `<tr><td colspan="${uids.length + 3}" style="color:var(--muted)">All codes agree.</td></tr>`}</tbody></table></div></div>
+      <div class="card"><h3>Characters</h3><p class="sub">Click a character to see each coder's marks for it. Characters are matched by name or overlapping marks.</p>
+        <div class="tw"><table class="cx-tab"><thead><tr><th>Character</th>${uids.map(u => `<th>${dot(u)}${esc(coderLabel(u))}</th>`).join('')}<th>Agreement</th></tr></thead><tbody>${chRows || `<tr><td colspan="${uids.length + 2}" style="color:var(--muted)">${groups.length ? 'All characters agree.' : 'No characters coded.'}</td></tr>`}</tbody></table></div></div>
+      <div class="card"><h3>Narrative summaries</h3><div class="sumc" style="margin-top:10px">${uids.map(u => `<div><b>${dot(u)}${esc(coderLabel(u))}</b>${esc(subs[u].summary || '—')}</div>`).join('')}</div>
+        ${canResolve ? `<label style="display:grid;gap:4px;margin-top:12px;font-size:12.5px;color:var(--muted);font-weight:500">Agreed summary (goes into the consensus dataset)<textarea id="finsum" data-key="${esc(key)}" rows="3">${esc(fin.summary || '')}</textarea></label>` : ''}</div>
+      ${uids.some(u => subs[u].memo) ? `<div class="card"><h3>Memos</h3><div class="sumc" style="margin-top:10px">${uids.filter(u => subs[u].memo).map(u => `<div><b>${dot(u)}${esc(coderLabel(u))}</b>${esc(subs[u].memo)}</div>`).join('')}</div></div>` : ''}
+      ${a.practice ? '' : `<div><button class="btn sm" data-act="gocode" data-key="${esc(key)}">Open in Code</button></div>`}
+    </section>
+  </div>`;
+  if (keep) ['.cx-list', '#cxText', '.cx-cmp'].forEach((q, i) => { const el = $(q); if (el) el.scrollTop = keep[i]; });
+  if (S.cmp.scroll) { S.cmp.scroll = false; cmpScrollToMark(); }
+}
+function cmpScrollToMark() {
+  requestAnimationFrame(() => {
+    const pane = $('#cxText'); if (!pane) return; const first = pane.querySelector('.cx-txt .cxm.some') || pane.querySelector('.cx-txt .cxm'); if (!first) return;
+    const head = pane.querySelector('.cx-th'); const pr = pane.getBoundingClientRect(), fr = first.getBoundingClientRect();
+    const top = pane.scrollTop + fr.top - pr.top - (head ? head.offsetHeight : 0) - 24;
+    const smooth = !matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (isPhone()) window.scrollTo({top:Math.max(0, fr.top + scrollY - 120), behavior:smooth ? 'smooth' : 'auto'});
+    else pane.scrollTo({top:Math.max(0, top), behavior:smooth ? 'smooth' : 'auto'});
+    first.classList.add('flash'); setTimeout(() => first.classList.remove('flash'), 1200);
+  });
+}
+function cmpSelect(s, fromText) {
+  S.cmp.sel = s; S.cmp.scroll = true;
+  if (isPhone() && !fromText) S.cmp.pane = 'text';
+  renderView();
+}
+function cmpStep(dir) {
+  const {diffs} = cmpModel(S.cmp.key); if (!diffs.length) return;
+  const i = diffs.findIndex(x => selKey(x) === selKey(S.cmp.sel));
+  cmpSelect(diffs[i < 0 ? (dir > 0 ? 0 : diffs.length - 1) : (i + dir + diffs.length) % diffs.length]);
 }
 function articleAgreement(subs) {
   if (subs.length < 2) return null; let a = 0, t = 0;
   for (const f of F) { const vs = subs.map(c => val(c, f.k)).filter(x => x !== ''); if (vs.length < 2) continue; t++; if (vs.every(x => x === vs[0])) a++; }
   return t ? a / t : null;
-}
-function compareBody(key) {
-  const a = art(key); const subs = subsOf(key); const uids = Object.keys(subs);
-  const cs = consensus(key); const fin = S.finals[key] || {};
-  const canResolve = S.isAdmin && !a.practice;
-  const head = `<tr><th>Variable</th>${uids.map(u => `<th>${esc(coderLabel(u))}</th>`).join('')}<th>Agreement</th><th>Consensus</th></tr>`;
-  let rows = '', lastSec = '';
-  for (const f of F) {
-    if (f.sec !== lastSec) { rows += `<tr class="grp"><td colspan="${uids.length + 3}">${esc(f.sec)}</td></tr>`; lastSec = f.sec; }
-    const vs = uids.map(u => val(subs[u], f.k)); const filled = vs.filter(x => x !== '');
-    const agree = filled.length < 2 ? null : filled.every(x => x === filled[0]);
-    const kind = fieldKind(f);
-    const consCell = canResolve ? `<select data-act="final" data-key="${esc(key)}" data-k="${f.k}" aria-label="Consensus for ${esc(f.label)}">
-        <option value="">${cs.src[f.k] === 'resolved' ? 'Majority' : cs.src[f.k] === 'tie' ? 'Tie: choose' : 'Majority: ' + esc(lab(kind, cs.values[f.k]))}</option>
-        ${(kind === 'num' ? [...new Set(filled)].map(x => [x, String(x)]) : OPT[kind]).map(([v, l]) => `<option value="${v}" ${fin.values && fin.values[f.k] === v ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>`
-      : `${esc(lab(kind, cs.values[f.k]))} <span class="pill na">${cs.src[f.k]}</span>`;
-    rows += `<tr class="${agree === false ? 'dis' : ''}"><td>${esc(f.label)}</td>${vs.map(x => `<td>${esc(kind === 'num' ? (x === '' ? '–' : x) : lab(kind, x))}</td>`).join('')}
-      <td>${agree == null ? '<span class="pill na">n/a</span>' : agree ? '<span class="pill good">agree</span>' : '<span class="pill warn">differs</span>'}</td><td>${consCell}</td></tr>`;
-  }
-  // characters
-  const groups = alignChars(uids.map(u => ({uid:u, c:subs[u]})));
-  const chRows = groups.map(g => {
-    const cells = uids.map(u => { const m = g.members[u]; if (!m) return '<td style="color:var(--faint)">not coded</td>';
-      const v = cv(m.c, m.ch, 'valid');
-      return `<td><b>${esc(m.ch.en || m.ch.name)}</b><br><span style="font-size:12px;color:var(--muted)">${v === 1 ? `${lab('role', cv(m.c, m.ch, 'role'))} · ${lab('level', cv(m.c, m.ch, 'level'))} · PRC ${lab('bin', cv(m.c, m.ch, 'prc'))}` : v === 0 ? 'not valid' : 'validity open'}</span></td>`; }).join('');
-    const mem = Object.values(g.members);
-    const roles = mem.map(m => cv(m.c, m.ch, 'role')).filter(x => x !== '');
-    const same = mem.length === uids.length && roles.length === mem.length && roles.every(r => r === roles[0]);
-    return `<tr class="${same ? '' : 'dis'}"><td>${esc(g.label)}</td>${cells}<td>${same ? '<span class="pill good">agree</span>' : mem.length < uids.length ? '<span class="pill warn">not found by all</span>' : '<span class="pill warn">role differs</span>'}</td></tr>`;
-  }).join('');
-  // text overlay
-  const cat = S.cmp.cat; const k = uids.length;
-  const ivs = uids.map(u => spansOf(subs[u], cat));
-  const pts = new Set([0, a.text.length]); ivs.forEach(iv => iv.forEach(([s, e]) => { pts.add(s); pts.add(e); }));
-  const arr = [...pts].sort((x, y) => x - y); let th = '';
-  for (let i = 0; i < arr.length - 1; i++) {
-    const s = arr[i], e = arr[i + 1]; const who = uids.filter((u, j) => ivs[j].some(([x, y]) => x <= s && y >= e));
-    const seg = esc(a.text.slice(s, e));
-    th += who.length ? `<span class="ov" style="background:color-mix(in srgb,${CM[cat].color} ${Math.round(14 + 56 * who.length / k)}%,transparent)" title="${esc(who.map(coderLabel).join(', '))}">${seg}</span>` : seg;
-  }
-  const f1 = spanAgreement(uids.map(u => subs[u]), cat);
-  return `<div class="card"><div class="vh"><div><h3 style="font-size:17px">${esc(a.id)} · ${esc(a.title || '')}</h3><p class="sub" style="margin:0">${k} coding${k > 1 ? 's' : ''}${uids.map(u => subs[u].revisions ? ` · ${esc(coderLabel(u))} revised ${subs[u].revisions}×${subs[u].revisedAfterComparison ? ' after comparing' : ''}` : '').join('')}</p></div>
-      ${a.practice ? '' : `<div class="tools"><button class="btn sm" data-act="gocode" data-key="${esc(key)}">Open in Code</button></div>`}</div></div>
-    <div class="card"><h3>Codes</h3><p class="sub">Rows that differ are tinted. ${canResolve ? 'Set the consensus after discussion; until then the majority value is used.' : 'Consensus = majority value unless the project lead resolved it.'}</p>
-      <div class="tw"><table><thead>${head}</thead><tbody>${rows}</tbody></table></div></div>
-    <div class="card"><h3>Characters</h3><p class="sub">Characters are matched across coders by name or by overlapping text marks.</p>
-      <div class="tw"><table><thead><tr><th>Character</th>${uids.map(u => `<th>${esc(coderLabel(u))}</th>`).join('')}<th>Agreement</th></tr></thead><tbody>${chRows || `<tr><td colspan="${uids.length + 2}" style="color:var(--muted)">No characters coded.</td></tr>`}</tbody></table></div></div>
-    <div class="card"><h3>Marked passages</h3><p class="sub">Darker = more coders marked it. Hover a passage to see who.${f1 != null ? ` Overlap between coders for this category: <b>${pct(f1)}</b>.` : ''}</p>
-      <div class="chips" style="margin-bottom:12px">${CATS.filter(c => c.id !== 'note').map(c => `<button class="chip ${cat === c.id ? 'on' : ''}" data-act="cmpcat" data-cat="${c.id}">${c.short}</button>`).join('')}</div>
-      <div class="txt" style="font-size:16px" lang="${a.dataset === '1' ? 'zh' : 'en'}">${th}</div></div>
-    <div class="card"><h3>Narrative summaries</h3><div class="sumc" style="margin-top:10px">${uids.map(u => `<div><b>${esc(coderLabel(u))}</b>${esc(subs[u].summary || '—')}</div>`).join('')}</div>
-      ${canResolve ? `<label style="display:grid;gap:4px;margin-top:12px;font-size:12.5px;color:var(--muted);font-weight:500">Agreed summary (goes into the consensus dataset)<textarea id="finsum" data-key="${esc(key)}" rows="3">${esc(fin.summary || '')}</textarea></label>` : ''}</div>
-    ${uids.some(u => subs[u].memo) ? `<div class="card"><h3>Memos</h3><div class="sumc" style="margin-top:10px">${uids.filter(u => subs[u].memo).map(u => `<div><b>${esc(coderLabel(u))}</b>${esc(subs[u].memo)}</div>`).join('')}</div></div>` : ''}`;
 }
 function spanAgreement(codings, cat) {
   const ivs = codings.map(c => spansOf(c, cat)); let sum = 0, n = 0;
@@ -1381,10 +1478,12 @@ document.addEventListener('click', async e => {
     case 'goto': if (isPhone()) setPane('sheet'); { const el = document.getElementById(d.k === 'summary' ? 'summary' : 'fld-' + d.k); if (el) { el.scrollIntoView({block:'center'}); if (el.tagName === 'TEXTAREA') el.focus(); } break; }
     case 'submit': submit(); break;
     case 'reopen': reopen(); break;
-    case 'gocmp': S.view = 'compare'; S.cmp.key = d.key; render(); break;
+    case 'gocmp': S.view = 'compare'; S.cmp.key = d.key; S.cmp.sel = null; render(); break;
     case 'gocode': S.view = 'code'; S.cur = d.key; render(); break;
-    case 'cmpopen': S.cmp.key = d.key; renderView(); break;
-    case 'cmpcat': S.cmp.cat = d.cat; renderView(); break;
+    case 'cmpopen': S.cmp.key = d.key; S.cmp.sel = null; S.cmp.scroll = true; renderView(); break;
+    case 'cmpsel': cmpSelect(d.t === 'var' ? {type:'var', k:d.k} : d.t === 'ch' ? {type:'ch', gi:+d.k} : {type:'cat', cat:d.k}, d.t === 'cat'); break;
+    case 'cmpstep': cmpStep(+d.d); break;
+    case 'cxpane': S.cmp.pane = d.v; renderView(); window.scrollTo(0, 0); break;
     case 'relb': S.rel.basis = d.v; renderView(); break;
     case 'relds': S.rel.ds = d.v; renderView(); break;
     case 'copymethods': copyText($('#methods').textContent, 'Methods paragraph copied.'); break;
@@ -1407,6 +1506,8 @@ document.addEventListener('click', async e => {
 document.addEventListener('change', e => {
   const t = e.target;
   if (t.dataset.act === 'final') { saveFinal(t.dataset.key, {values:{[t.dataset.k]:t.value === '' ? '' : +t.value}}).then(() => renderView()); }
+  if (t.dataset.act === 'cmppick') { S.cmp.key = t.value; S.cmp.sel = null; S.cmp.scroll = true; renderView(); return; }
+  if (t.dataset.act === 'cmponly') { S.cmp.onlyDiff = t.checked; renderView(); return; }
   if (t.dataset.act === 'relnodisc') { S.rel.noDisc = t.checked; relCache.sig = ''; renderView(); return; }
   if (t.dataset.act === 'progopen') { S.prog.onlyOpen = t.checked; renderView(); return; }
   if (t.dataset.act === 'leadview') { S.leadView = t.checked; LS.set('npf:leadView', t.checked); if (t.checked) toast('Lead view on. Code your own articles before you look at them here.', 4000); renderView(); return; }
@@ -1438,6 +1539,8 @@ document.addEventListener('input', e => { if (e.target.closest && e.target.close
 document.addEventListener('keydown', e => {
   const typing = /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName);
   if (e.key === 'Escape') { if (S.menu && S.menu.type === 'char') { showTagMenu(S.menu.rect); e.preventDefault(); return; } if (!$('#modal').hidden) { closeModal(); return; } hidePop(); return; }
+  if (e.key === 'Enter' && e.target.classList && e.target.classList.contains('selrow')) { e.preventDefault(); e.target.click(); return; }
+  if (S.view === 'compare' && !typing && !e.ctrlKey && !e.metaKey && !e.altKey && (e.key === 'j' || e.key === 'k')) { e.preventDefault(); cmpStep(e.key === 'j' ? 1 : -1); return; }
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !typing && S.view === 'code') {
     const u = S.undo.pop(); if (!u) { toast('Nothing to undo'); return; } e.preventDefault();
     const c = draft(u.key); c.anns = u.anns; c.chars = u.chars; S.cur = u.key; changed(); toast('Undone'); return;
@@ -1456,7 +1559,7 @@ document.addEventListener('scroll', e => { if (e.target === $('#pop')) return; i
 
 
 /* ================= roles ================= */
-const APP_VERSION = '2026-11-06a';
+const APP_VERSION = '2026-11-06b';
 const isLead = () => S.mode !== 'shared' || S.isAdmin;
 function allArticles() { return Object.values(S.articles).sort((a, b) => (a.order ?? 1e9) - (b.order ?? 1e9) || String(a.id).localeCompare(String(b.id), undefined, {numeric:true})); }
 function myQueue() { return corpus().filter(a => (assigned(a) || []).includes(String(S.coder))); }

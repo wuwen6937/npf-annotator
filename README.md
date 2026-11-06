@@ -15,6 +15,8 @@ It runs in any browser and on phones, and can be added to the home screen like a
 
 **Discussions:** while coding, a coder can flag a passage (or ask about the whole article) and tag the other coders of that article or the lead. Threads appear in everyone's *My work*. Only people assigned to the article and the lead can read them. Reliability can leave out articles that were discussed before all coders had submitted.
 
+**Compare** keeps the article text on screen beside the codes. Click any variable or character (or press *Next difference*, keyboard J/K) and the text shows which passages each coder marked for it, one coloured underline per coder; passages not marked by everyone are tinted. On a phone, Text and Comparison are two tabs.
+
 Coders never see each other's work; only the project lead can compare. The database enforces this, not just the screen. Articles that already have codings cannot be deleted, only archived.
 
 **Safety copies:** the database copies all codings every night (kept 30 days) and makes a full copy including article texts every Sunday (last 6 kept). The lead can download any copy under *Progress*, and should also download a backup file now and then to keep outside Supabase.
