@@ -140,7 +140,7 @@ const coderIni = code => (CODERS.find(c => c.code === String(code)) || {}).ini |
 const S = {
   mode:'loading', uid:'local', coder:'', isAdmin:true, canWrite:true,
   articles:{}, profiles:{}, subs:{}, finals:{}, drafts:{},
-  practiceSubs:{},
+  practiceSubs:{}, peers:{}, peerStat:{},
   view:'code', cur:'practice-en', plot:1, mpane:'text', members:[], email:'', auth:{}, hidden:{},
   list:{q:'', f:'all'}, rel:{basis:'first', ds:'all'}, an:{tab:'passages', cat:'', ds:'all', coder:'all', q:''},
   cmp:{key:null, sel:null, onlyDiff:false, pane:'text', scroll:false}, sync:{s:'idle', msg:'This browser only'},
@@ -430,7 +430,8 @@ function renderTop() {
   const todoN = myWork().todo.length;
   const unN = S.mode === 'shared' ? unreadThreads().length : 0;
   const mine = ['inbox', 'My work' + (todoN ? ` <span class="badge soft">${todoN}</span>` : '') + (unN ? ` <span class="badge" title="New messages in discussions">${unN}</span>` : '')];
-  const tabs = isLead() ? [mine, ['code','Code'], ...(S.mode === 'shared' ? [['progress','Progress' + (nf ? ` <span class="badge">${nf}</span>` : '')]] : []), ['compare','Compare'],['reliability','Reliability'],['analyse','Analyse']] : [mine, ['code','Code']];
+  const tabs = isLead() ? [mine, ['code','Code'], ...(S.mode === 'shared' ? [['progress','Progress' + (nf ? ` <span class="badge">${nf}</span>` : '')]] : []), ['compare','Compare'],['reliability','Reliability'],['analyse','Analyse']]
+    : [mine, ['code','Code'], ...(S.mode === 'shared' ? [['compare', 'Compare' + (cmpUnseen() ? ` <span class="badge" title="Articles everyone has finished that you have not compared yet">${cmpUnseen()}</span>` : '')]] : [])];
   const q = !isLead() ? myQueue() : [], qd = q.filter(a => myStatus(a.key) === 'done').length;
   const sy = S.sync;
   $('#top').innerHTML = `
@@ -466,7 +467,7 @@ function paintSave() {
 }
 function renderView() {
   const v = $('#view'); hidePop();
-  if (!isLead() && !['code','inbox'].includes(S.view)) S.view = 'inbox';
+  if (!isLead() && !['code','inbox','compare'].includes(S.view)) S.view = 'inbox';
   if (S.view === 'inbox') return viewInbox(v);
   if (S.view === 'progress' && S.mode !== 'shared') S.view = 'code';
   if (S.view === 'code') return viewCode(v);
@@ -529,10 +530,11 @@ function renderReader() {
   const c = draft(a.key); const lk = locked(a.key);
   const counts = {}; c.anns.forEach(x => counts[x.cat] = (counts[x.cat] || 0) + 1);
   const others = Object.keys(subsOf(a.key)).filter(u => u !== S.uid).length;
+  const peerOpen = !isLead() && !!S.peers[a.key], peerWait = !isLead() && !peerOpen ? cmpWaitText(a.key) : '';
   el.innerHTML = `<div class="rd">
     <div class="rd-meta"><span class="tag">${esc(a.id)}</span><span>${a.dataset === '1' ? 'Chinese' : 'English'}</span>${a.ebene ? `<span>· Ebene ${esc(a.ebene)}</span>` : ''}${metaLine(a)}${a.url ? `<a href="${esc(a.url)}" target="_blank" rel="noopener">Open source ↗</a>` : ''}${a.practice ? '<span class="pill na">Practice, not part of the corpus</span>' : ''}</div>
     <h1 lang="${a.dataset === '1' ? 'zh' : 'en'}">${esc(a.title || a.id)}</h1>
-    ${lk ? `<div class="banner good"><span>✓ Submitted ${esc(fmtDate(c.submittedAt))}.${others && isLead() ? ' ' + others + ' other coding' + (others > 1 ? 's' : '') + ' available.' : ' Thank you!'}</span><span style="margin-left:auto;display:flex;gap:8px">${nextKey() ? `<button class="btn sm pri" data-act="next">Next article →</button>` : ''}${others && isLead() ? `<button class="btn sm${nextKey() ? '' : ' pri'}" data-act="gocmp" data-key="${esc(a.key)}">Compare</button>` : ''}${a.practice ? '' : '<button class="btn sm" data-act="view" data-v="inbox">My work</button>'}<button class="btn sm" data-act="reopen">Edit again</button></span></div>` : ''}
+    ${lk ? `<div class="banner good"><span>✓ Submitted ${esc(fmtDate(c.submittedAt))}.${others && (isLead() || a.practice) ? ' ' + others + ' other coding' + (others > 1 ? 's' : '') + ' available.' : peerOpen ? ' Everyone has finished this article, so you can now compare.' : ' Thank you!' + (peerWait ? ' ' + peerWait : '')}</span><span style="margin-left:auto;display:flex;gap:8px">${nextKey() ? `<button class="btn sm pri" data-act="next">Next article →</button>` : ''}${(others && (isLead() || a.practice)) || peerOpen ? `<button class="btn sm${nextKey() ? '' : ' pri'}" data-act="gocmp" data-key="${esc(a.key)}">Compare</button>` : ''}${a.practice ? '' : '<button class="btn sm" data-act="view" data-v="inbox">My work</button>'}<button class="btn sm" data-act="reopen">Edit again</button></span></div>` : ''}
     ${preTop(c, lk)}
     ${!S.hintOff && !lk && preDone(c) && !screenedOut(c) ? `<div class="hint"><span><b>${matchMedia('(pointer: coarse)').matches ? 'Press and hold a word, drag to cover the passage, then pick a category.' : 'Select words in the text to code them.'}</b> A menu opens with the codebook categories${matchMedia('(pointer: coarse)').matches ? '' : '; each has a shortcut key'}. Click a highlight to change or delete it. Most Yes/No answers on the right fill themselves from what you mark.</span><button data-act="hintoff" aria-label="Hide tip">✕</button></div>` : ''}
     <div class="rd-bar">
@@ -794,7 +796,10 @@ async function submit() {
   try { setSync('saving'); await writeSub(key, sub); await flushSave(key); if (!pendingSave.size) setSync('saved'); }
   catch (e) { c.status = 'draft'; setSync('error', e && e.message); toast('Could not submit. Check your connection and try again.'); return; }
   const others = Object.keys(subsOf(key)).filter(u => u !== S.uid).length;
-  if (screenedOut(c)) toast('Prescreening submitted. This article needs no further coding.'); else toast(others && isLead() ? 'Submitted. You can now compare with ' + others + ' other coding' + (others > 1 ? 's' : '') + '.' : 'Submitted. Thank you!');
+  if (!isLead() && !isPractice(key)) { try { await loadPeers(); } catch {} }
+  const opened = !isLead() && !!S.peers[key];
+  if (screenedOut(c)) toast('Prescreening submitted. This article needs no further coding.' + (opened ? ' Everyone is done, so you can compare.' : ''), opened ? 4500 : 2600);
+  else toast(others && isLead() ? 'Submitted. You can now compare with ' + others + ' other coding' + (others > 1 ? 's' : '') + '.' : opened ? 'Submitted. You were the last one: the comparison for this article is now open.' : 'Submitted. Thank you!', opened ? 4500 : 2600);
   render(); afterSubmitCheer(key);
 }
 function reopen() { const c = draft(S.cur); c.status = 'draft'; queueSave(S.cur); render(); }
@@ -835,7 +840,7 @@ function cmpText(a, uids, subs, spec) {
     if (!who.length) { h += seg; continue; }
     const cats = [...new Set(who.flatMap(j => per[j].filter(x => x.s < e && x.e > s).map(x => CM[x.cat].short)))];
     const shadow = who.map((j, n) => `inset 0 -${3 * (n + 1)}px 0 ${CCOL[j % CCOL.length]}`).join(',');
-    h += `<span class="cxm ${who.length === uids.length ? 'all' : 'some'}" style="box-shadow:${shadow};padding-bottom:${3 * who.length}px" title="${esc('Marked by ' + who.map(j => coderLabel(uids[j])).join(', ') + (cats.length ? ' · ' + cats.join(', ') : ''))}">${seg}</span>`;
+    h += `<span class="cxm ${who.length === uids.length ? 'all' : 'some'}" style="box-shadow:${shadow};padding-bottom:${3 * who.length}px" title="${esc('Marked by ' + who.map(j => cmpLabel(uids[j], a.key)).join(', ') + (cats.length ? ' · ' + cats.join(', ') : ''))}">${seg}</span>`;
   }
   // overlap between coders for what is shown (mean pairwise, same formula as span agreement)
   let sum = 0, n = 0;
@@ -853,22 +858,47 @@ function cmpDiffs(uids, subs, groups) {
   return out;
 }
 const selKey = s => !s ? '' : s.type === 'var' ? 'v:' + s.k : s.type === 'cat' ? 'c:' + s.cat : 'g:' + s.gi;
+/* coders compare from the released peer codings; the lead from everything */
+const peerMode = key => S.mode === 'shared' && !isLead() && !isPractice(key);
+function cmpSubs(key) { if (!peerMode(key)) return subsOf(key); const out = {}; (S.peers[key] || []).forEach(p => out[p.id] = p.c); return out; }
+function cmpLabel(u, key) { if (peerMode(key)) { const p = (S.peers[key] || []).find(x => x.id === u); if (p) return p.label; } return coderLabel(u); }
+const cmpSeenKey = () => 'npf:cmpseen:' + S.uid;
+const cmpUnseen = () => { const m = LS.get(cmpSeenKey(), {}) || {}; return Object.keys(S.peers).filter(k => !m[k] && S.articles[k]).length; };
+function markCmpSeen(key) { if (!peerMode(key)) return; const m = LS.get(cmpSeenKey(), {}) || {}; if (!m[key]) { m[key] = now(); LS.set(cmpSeenKey(), m); renderTop(); } }
+function cmpWaitText(key) {
+  const st = S.peerStat[key]; if (!st || st.of < 2) return '';
+  const left = st.of - st.n;
+  return left > 0 ? `Comparison opens when all ${st.of} coders have submitted (${st.n} of ${st.of} so far).` : '';
+}
 function cmpModel(key) {
-  const subs = subsOf(key); const uids = Object.keys(subs);
+  const subs = cmpSubs(key); const uids = Object.keys(subs);
   const groups = alignChars(uids.map(u => ({uid:u, c:subs[u]})));
   return {subs, uids, groups, diffs:cmpDiffs(uids, subs, groups)};
 }
+function cmpWaitingHTML(list) {
+  if (!list.length) return '';
+  return `<div class="grp-l">Waiting for others · ${list.length}</div>` + list.map(x => { const st = S.peerStat[x.key] || {}, mine = myStatus(x.key) === 'done';
+    return `<div class="art" style="cursor:default;opacity:.75" title="${esc(mine ? 'Opens when everyone has submitted' : 'Submit your own coding first')}"><span class="st"></span><span class="art-id">${esc(x.id)}</span><span class="tag">${st.n || 0}/${st.of || '?'}</span><span class="art-t">${mine ? `${st.n} of ${st.of} coders done` : 'Your coding is not submitted yet'}</span></div>`; }).join('');
+}
 function viewCompare(v) {
-  const eligible = [...PRACTICE, ...corpus()].filter(a => Object.keys(subsOf(a.key)).length >= 1 && canSeeOthers(a.key));
+  const coderView = !isLead();
+  const eligible = coderView
+    ? [...myQueue().filter(a => (S.peers[a.key] || []).length >= 2), ...PRACTICE.filter(a => mySub(a.key))]
+    : [...PRACTICE, ...corpus()].filter(a => Object.keys(subsOf(a.key)).length >= 1 && canSeeOthers(a.key));
+  const waiting = coderView ? myQueue().filter(a => !S.peers[a.key] && S.peerStat[a.key] && S.peerStat[a.key].of >= 2).sort(byDue) : [];
   if (!S.cmp.key || !eligible.find(a => a.key === S.cmp.key)) { S.cmp.key = eligible[0] ? eligible[0].key : null; S.cmp.sel = null; }
   const key = S.cmp.key; S.cmp.pane = S.cmp.pane || 'text';
   if (!key) {
-    v.innerHTML = `<div class="wide"><div class="wrap"><div class="vh"><div><h2>Compare codings</h2><p>Every coder's codes for one article, next to the text.</p></div><div class="tools">${leadToggle()}</div></div>
-      <div class="card empty"><b>Nothing to compare yet</b>Submit a coding first. Try the English practice text: two example coders are waiting there.</div></div></div>`;
+    v.innerHTML = `<div class="wide"><div class="wrap"><div class="vh"><div><h2>Compare codings</h2><p>${coderView ? 'Your codes next to the other coders\' codes for the same article, once everyone has finished it.' : 'Every coder\'s codes for one article, next to the text.'}</p></div><div class="tools">${leadToggle()}</div></div>
+      <div class="card empty"><b>Nothing to compare yet</b>${coderView ? 'An article opens here as soon as everyone assigned to it has submitted. Until then nobody sees anyone else\'s codes, so no one is influenced by the others. You can also submit the English practice text to try the comparison with two example coders.' : 'Submit a coding first. Try the English practice text: two example coders are waiting there.'}</div>
+      ${waiting.length ? `<div class="card" style="display:grid;gap:3px">${cmpWaitingHTML(waiting)}</div>` : ''}</div></div>`;
     return;
   }
-  { const d = draft(key, false); if (d && !d.sawOthers && Object.keys(subsOf(key)).length > 1) { d.sawOthers = true; queueSave(key); } }
   const a = art(key); const {subs, uids, groups, diffs} = cmpModel(key);
+  { const d = draft(key, false); if (d && !d.sawOthers && uids.some(u => u !== S.uid)) { d.sawOthers = true; queueSave(key); } }
+  markCmpSeen(key);
+  const peer = peerMode(key), showCons = !coderView;
+  const lbl = u => cmpLabel(u, key);
   if (!S.cmp.sel || (S.cmp.sel.type === 'ch' && !groups[S.cmp.sel.gi]))
     S.cmp.sel = diffs.find(x => x.type === 'ch' || !cmpSpec(x, groups).none) || {type:'cat', cat:'char'};
   const sel = S.cmp.sel, spec = cmpSpec(sel, groups), sk = selKey(sel);
@@ -878,7 +908,7 @@ function viewCompare(v) {
   const onlyDiff = !!S.cmp.onlyDiff;
   const zh = a.dataset === '1' ? 'zh' : 'en';
   const dot = u => `<i class="cdot" style="background:${CCOL[uids.indexOf(u) % CCOL.length]}"></i>`;
-  const list = eligible.map(x => { const ss = Object.values(subsOf(x.key)); const ag = articleAgreement(ss);
+  const list = eligible.map(x => { const ss = Object.values(cmpSubs(x.key)); const ag = articleAgreement(ss);
     return `<button class="art ${key === x.key ? 'on' : ''}" data-act="cmpopen" data-key="${esc(x.key)}"><span class="st ${ag == null ? '' : ag >= .9 ? 'done' : 'draft'}"></span><span class="art-id">${esc(x.id)}</span><span class="tag">${ss.length}</span><span class="art-t">${ag == null ? 'Waiting for a second coder' : pct(ag) + ' of variables agree'}</span></button>`; }).join('');
   // codes table
   let rows = '', lastSec = '';
@@ -886,7 +916,7 @@ function viewCompare(v) {
     const vs = uids.map(u => val(subs[u], f.k)); const filled = vs.filter(x => x !== '');
     const agree = filled.length < 2 ? null : filled.every(x => x === filled[0]);
     if (onlyDiff && agree !== false) continue;
-    if (f.sec !== lastSec) { rows += `<tr class="grp"><td colspan="${uids.length + 3}">${esc(f.sec)}</td></tr>`; lastSec = f.sec; }
+    if (f.sec !== lastSec) { rows += `<tr class="grp"><td colspan="${uids.length + 2 + (showCons ? 1 : 0)}">${esc(f.sec)}</td></tr>`; lastSec = f.sec; }
     const kind = fieldKind(f);
     const consCell = canResolve ? `<select data-act="final" data-key="${esc(key)}" data-k="${f.k}" aria-label="Consensus for ${esc(f.label)}">
         <option value="">${cs.src[f.k] === 'resolved' ? 'Majority' : cs.src[f.k] === 'tie' ? 'Tie: choose' : 'Majority: ' + esc(lab(kind, cs.values[f.k]))}</option>
@@ -894,7 +924,7 @@ function viewCompare(v) {
       : `${esc(lab(kind, cs.values[f.k]))}`;
     rows += `<tr class="selrow ${agree === false ? 'dis' : ''} ${sk === 'v:' + f.k ? 'sel' : ''}" data-act="cmpsel" data-t="var" data-k="${f.k}" tabindex="0" aria-selected="${sk === 'v:' + f.k}">
       <td>${esc(f.label)}</td>${vs.map(x => `<td>${esc(kind === 'num' ? (x === '' ? '–' : x) : lab(kind, x))}</td>`).join('')}
-      <td>${agree == null ? '<span class="pill na">n/a</span>' : agree ? '<span class="pill good">agree</span>' : '<span class="pill warn">differs</span>'}</td><td>${consCell}</td></tr>`;
+      <td>${agree == null ? '<span class="pill na">n/a</span>' : agree ? '<span class="pill good">agree</span>' : '<span class="pill warn">differs</span>'}</td>${showCons ? `<td>${consCell}</td>` : ''}</tr>`;
   }
   const chRows = groups.map((g, gi) => {
     const mem = Object.values(g.members); const same = cmpRoleSame(g, uids);
@@ -906,12 +936,12 @@ function viewCompare(v) {
   }).join('');
   const di = diffs.findIndex(x => selKey(x) === sk);
   const nV = diffs.filter(x => x.type === 'var').length, nC = diffs.filter(x => x.type === 'ch').length;
-  const revs = uids.map(u => subs[u].revisions ? `${esc(coderLabel(u))} revised ${subs[u].revisions}×${subs[u].revisedAfterComparison ? ' after comparing' : ''}` : '').filter(Boolean).join(' · ');
+  const revs = uids.map(u => subs[u].revisions ? `${esc(lbl(u))} revised ${subs[u].revisions}×${subs[u].revisedAfterComparison ? ' after comparing' : ''}` : '').filter(Boolean).join(' · ');
   const same = S.cmp.lastKey === key, keep = same ? ['.cx-list', '#cxText', '.cx-cmp'].map(q => { const el = $(q); return el ? el.scrollTop : 0; }) : null;
   S.cmp.lastKey = key;
   v.innerHTML = `<nav class="cx-tabs" aria-label="Panes"><button data-act="cxpane" data-v="text" class="${S.cmp.pane === 'text' ? 'on' : ''}">Text</button><button data-act="cxpane" data-v="cmp" class="${S.cmp.pane === 'cmp' ? 'on' : ''}">Comparison${diffs.length ? ` <span class="badge">${diffs.length}</span>` : ''}</button></nav>
   <div class="cmpx" data-pane="${S.cmp.pane}">
-    <aside class="cx-list pane" aria-label="Articles"><div class="grp-l" style="margin-top:0">Articles</div>${list}<div style="margin-top:14px">${leadToggle()}</div></aside>
+    <aside class="cx-list pane" aria-label="Articles"><div class="grp-l" style="margin-top:0">Articles</div>${list}${cmpWaitingHTML(waiting)}<div style="margin-top:14px">${leadToggle()}</div></aside>
     <section class="cx-text pane" id="cxText" aria-label="Article text">
       <div class="cx-mnow"><span>${esc(spec ? spec.label : '–')}</span><button class="btn sm" data-act="cmpstep" data-d="-1" ${diffs.length ? '' : 'disabled'} aria-label="Previous difference">‹</button><button class="btn sm pri" data-act="cmpstep" data-d="1" ${diffs.length ? '' : 'disabled'} aria-label="Next difference">›</button></div>
       <div class="cx-th">
@@ -919,13 +949,14 @@ function viewCompare(v) {
         <div class="rd-meta"><span class="tag">${esc(a.id)}</span><span>${a.dataset === '1' ? 'Chinese' : 'English'}</span>${metaLine(a)}${a.practice ? '<span class="pill na">practice</span>' : ''}</div>
         <h2 class="cx-title" lang="${zh}">${esc(a.title || a.id)}</h2>
         <div class="cx-now">In the text: <b>${esc(spec ? spec.label : '–')}</b>${T.overlap != null ? ` · coders' marks overlap <b>${pct(T.overlap)}</b>` : ''}</div>
-        <div class="cx-leg">${uids.map((u, j) => `<span title="${T.counts[j]} marked passage${T.counts[j] === 1 ? '' : 's'}">${dot(u)}${esc(coderLabel(u))} <b>${T.counts[j]}</b></span>`).join('')}${uids.length > 1 ? '<span class="cx-key"><i class="cxm some">tinted</i> = not marked by everyone</span>' : ''}</div>
+        <div class="cx-leg">${uids.map((u, j) => `<span title="${T.counts[j]} marked passage${T.counts[j] === 1 ? '' : 's'}">${dot(u)}${esc(lbl(u))} <b>${T.counts[j]}</b></span>`).join('')}${uids.length > 1 ? '<span class="cx-key"><i class="cxm some">tinted</i> = not marked by everyone</span>' : ''}</div>
         <div class="chips cx-cats" aria-label="Show a category">${CATS.filter(c => c.id !== 'note').map(c => `<button class="chip ${sk === 'c:' + c.id ? 'on' : ''}" data-act="cmpsel" data-t="cat" data-k="${c.id}">${c.short}</button>`).join('')}</div>
       </div>
       ${spec && spec.none ? `<div class="banner warn" style="margin:12px 0 0">${esc(spec.label)} is judged from the whole text, so there are no marked passages to compare. Read the text below.</div>` : ''}
       <div class="txt cx-txt" lang="${zh}">${T.html}</div>
     </section>
     <section class="cx-cmp pane" aria-label="Comparison">
+      ${peer ? `<div class="banner cx-private"><span><b>Only you see this.</b> Everyone coded this article blind. Shown is each coder's <b>first</b> submission, with names hidden (letters change per article) and memos left out. If you edit your coding now, it is marked <i>revised after comparing</i>; reliability always uses first submissions.</span></div>` : ''}
       <div class="cx-bar">
         <div class="cx-sum"><b>${diffs.length ? diffs.length + ' difference' + (diffs.length > 1 ? 's' : '') : uids.length > 1 ? 'No differences' : 'One coding so far'}</b><span> ${nV} variable${nV === 1 ? '' : 's'} · ${nC} character${nC === 1 ? '' : 's'} · ${uids.length} coding${uids.length === 1 ? '' : 's'}</span>${revs ? `<span class="cx-rev">${revs}</span>` : ''}</div>
         <div class="cx-nav">
@@ -935,13 +966,13 @@ function viewCompare(v) {
         </div>
       </div>
       <div class="card"><h3>Codes</h3><p class="sub">Click a row to see in the text which passages each coder marked for it.${canResolve ? ' Set the consensus after discussion; until then the majority is used.' : ''}</p>
-        <div class="tw"><table class="cx-tab"><thead><tr><th>Variable</th>${uids.map(u => `<th>${dot(u)}${esc(coderLabel(u))}</th>`).join('')}<th>Agreement</th><th>Consensus</th></tr></thead><tbody>${rows || `<tr><td colspan="${uids.length + 3}" style="color:var(--muted)">All codes agree.</td></tr>`}</tbody></table></div></div>
+        <div class="tw"><table class="cx-tab"><thead><tr><th>Variable</th>${uids.map(u => `<th>${dot(u)}${esc(lbl(u))}</th>`).join('')}<th>Agreement</th>${showCons ? '<th>Consensus</th>' : ''}</tr></thead><tbody>${rows || `<tr><td colspan="${uids.length + 2 + (showCons ? 1 : 0)}" style="color:var(--muted)">All codes agree.</td></tr>`}</tbody></table></div></div>
       <div class="card"><h3>Characters</h3><p class="sub">Click a character to see each coder's marks for it. Characters are matched by name or overlapping marks.</p>
-        <div class="tw"><table class="cx-tab"><thead><tr><th>Character</th>${uids.map(u => `<th>${dot(u)}${esc(coderLabel(u))}</th>`).join('')}<th>Agreement</th></tr></thead><tbody>${chRows || `<tr><td colspan="${uids.length + 2}" style="color:var(--muted)">${groups.length ? 'All characters agree.' : 'No characters coded.'}</td></tr>`}</tbody></table></div></div>
-      <div class="card"><h3>Narrative summaries</h3><div class="sumc" style="margin-top:10px">${uids.map(u => `<div><b>${dot(u)}${esc(coderLabel(u))}</b>${esc(subs[u].summary || '—')}</div>`).join('')}</div>
+        <div class="tw"><table class="cx-tab"><thead><tr><th>Character</th>${uids.map(u => `<th>${dot(u)}${esc(lbl(u))}</th>`).join('')}<th>Agreement</th></tr></thead><tbody>${chRows || `<tr><td colspan="${uids.length + 2}" style="color:var(--muted)">${groups.length ? 'All characters agree.' : 'No characters coded.'}</td></tr>`}</tbody></table></div></div>
+      <div class="card"><h3>Narrative summaries</h3><div class="sumc" style="margin-top:10px">${uids.map(u => `<div><b>${dot(u)}${esc(lbl(u))}</b>${esc(subs[u].summary || '—')}</div>`).join('')}</div>
         ${canResolve ? `<label style="display:grid;gap:4px;margin-top:12px;font-size:12.5px;color:var(--muted);font-weight:500">Agreed summary (goes into the consensus dataset)<textarea id="finsum" data-key="${esc(key)}" rows="3">${esc(fin.summary || '')}</textarea></label>` : ''}</div>
-      ${uids.some(u => subs[u].memo) ? `<div class="card"><h3>Memos</h3><div class="sumc" style="margin-top:10px">${uids.filter(u => subs[u].memo).map(u => `<div><b>${dot(u)}${esc(coderLabel(u))}</b>${esc(subs[u].memo)}</div>`).join('')}</div></div>` : ''}
-      ${a.practice ? '' : `<div><button class="btn sm" data-act="gocode" data-key="${esc(key)}">Open in Code</button></div>`}
+      ${uids.some(u => subs[u].memo) ? `<div class="card"><h3>Memos</h3><div class="sumc" style="margin-top:10px">${uids.filter(u => subs[u].memo).map(u => `<div><b>${dot(u)}${esc(lbl(u))}</b>${esc(subs[u].memo)}</div>`).join('')}</div></div>` : ''}
+      ${a.practice ? '' : `<div><button class="btn sm" data-act="gocode" data-key="${esc(key)}">${coderView ? 'Back to my coding' : 'Open in Code'}</button></div>`}
     </section>
   </div>`;
   if (keep) ['.cx-list', '#cxText', '.cx-cmp'].forEach((q, i) => { const el = $(q); if (el) el.scrollTop = keep[i]; });
@@ -1412,7 +1443,7 @@ document.addEventListener('click', async e => {
   if (!t) { if (e.target === $('#modal')) closeModal(); return; }
   const d = t.dataset, act = d.act;
   switch (act) {
-    case 'view': S.view = d.v; render(); break;
+    case 'view': S.view = d.v; render(); if (!isLead() && ['inbox', 'compare'].includes(d.v)) loadPeers().then(n => { if (n) soft(); }).catch(() => {}); break;
     case 'work': S.cur = d.key; markSeen(d.key); S.undo = []; S.hidden = {}; S.psEdit = false; S.view = 'code'; render(); $('#reader').scrollTop = 0; if (isPhone()) setPane('text'); break;
     case 'setdue': openDue(); break;
     case 'dosetdue': doSetDue(d.clear === '1'); break;
@@ -1559,7 +1590,7 @@ document.addEventListener('scroll', e => { if (e.target === $('#pop')) return; i
 
 
 /* ================= roles ================= */
-const APP_VERSION = '2026-11-06c';
+const APP_VERSION = '2026-11-09a';
 const isLead = () => S.mode !== 'shared' || S.isAdmin;
 function allArticles() { return Object.values(S.articles).sort((a, b) => (a.order ?? 1e9) - (b.order ?? 1e9) || String(a.id).localeCompare(String(b.id), undefined, {numeric:true})); }
 function myQueue() { return corpus().filter(a => (assigned(a) || []).includes(String(S.coder))); }
@@ -1614,11 +1645,13 @@ function viewInbox(v) {
     const status = isDone ? (screenedOut(s) ? '<span class="pill na">screened out</span>' : `<span class="pill good">coded · ${(s.anns || []).length} mark${(s.anns || []).length === 1 ? '' : 's'}</span>`)
       : isNew ? '<span class="pill new">new</span>' : st === 'draft' ? `<span class="pill warn">in progress · ${(c.anns || []).length} mark${(c.anns || []).length === 1 ? '' : 's'}</span>` : '<span class="pill na">not started</span>';
     const when = isDone ? `submitted ${esc(ago(s.submittedAt))}${s.revisions ? ' · changed ' + s.revisions + '×' : ''}` : st === 'draft' && c.updatedAt ? 'last edited ' + esc(ago(c.updatedAt)) : '';
+    const ps = S.peerStat[a.key], canCmp = isDone && !!S.peers[a.key], cmpNew = canCmp && !(LS.get(cmpSeenKey(), {}) || {})[a.key];
+    const wait = isDone && !canCmp && ps && ps.of >= 2 && ps.n < ps.of ? `comparison opens when all ${ps.of} have submitted (${ps.n} so far)` : '';
     return `<article class="wk ${isNew ? 'is-new' : ''} ${isDone ? 'is-done' : ''}">
-      <div class="wk-m"><span class="tag">${esc(a.id)}</span><span class="tag">${a.dataset === '1' ? 'CN' : 'EN'}</span>${status}${duePill(a, isDone)}</div>
+      <div class="wk-m"><span class="tag">${esc(a.id)}</span><span class="tag">${a.dataset === '1' ? 'CN' : 'EN'}</span>${status}${cmpNew ? '<span class="pill new">ready to compare</span>' : ''}${duePill(a, isDone)}</div>
       <h3 lang="${a.dataset === '1' ? 'zh' : 'en'}">${esc(a.title || String(a.text || '').slice(0, 80))}</h3>
-      <div class="wk-f"><span class="small" style="margin:0">${metaLine(a).replace(/^<span>· /, '<span>')}${when ? (metaLine(a) ? ' · ' : '') + when : ''}</span>
-        <button class="btn sm ${isDone ? '' : 'pri'}" data-act="work" data-key="${esc(a.key)}">${isDone ? 'Review' : st === 'draft' ? 'Continue' : 'Start'}</button></div>
+      <div class="wk-f"><span class="small" style="margin:0">${metaLine(a).replace(/^<span>· /, '<span>')}${when ? (metaLine(a) ? ' · ' : '') + when : ''}${wait ? ' · ' + wait : ''}</span>
+        <span style="display:flex;gap:6px">${canCmp ? `<button class="btn sm${cmpNew ? ' pri' : ''}" data-act="gocmp" data-key="${esc(a.key)}">Compare</button>` : ''}<button class="btn sm ${isDone ? '' : 'pri'}" data-act="work" data-key="${esc(a.key)}">${isDone ? 'Review' : st === 'draft' ? 'Continue' : 'Start'}</button></span></div>
     </article>`;
   };
   const name = S.coder ? coderIni(S.coder) : '';
@@ -2096,6 +2129,21 @@ async function loadSubs() {
   const m = {}; rows.forEach(r => { (m[r.user_id] = m[r.user_id] || {})[r.article_key] = subFromRow(r); if (!S.profiles[r.user_id]) S.profiles[r.user_id] = {coder:r.coder}; });
   S.subs = m; relCache.sig = '';
 }
+/* Peer comparison for coders. The database releases the other codings of an article only once every
+   assigned coder has submitted, and only their first (blind) submission, anonymised and without memos. */
+async function loadPeers() {
+  if (S.mode !== 'shared' || !sb || S.isAdmin) { S.peers = {}; S.peerStat = {}; return false; }
+  const [p, st] = await Promise.all([sb.rpc('peer_codings'), sb.rpc('compare_status')]);
+  if (p.error || st.error) return false;   // database not updated yet: the feature simply stays off
+  const before = new Set(Object.keys(S.peers));
+  const m = {};
+  (p.data || []).forEach(r => (m[r.article_key] = m[r.article_key] || []).push({
+    id:r.mine ? S.uid : 'peer:' + r.slot, label:r.slot, mine:!!r.mine,
+    c:{anns:[], chars:[], codes:{}, summary:'', ...(r.data || {}), aid:r.article_key, status:'submitted'}}));
+  S.peers = m; S.peerStat = {};
+  (st.data || []).forEach(r => S.peerStat[r.article_key] = {n:r.submitted, of:r.assigned, ready:!!r.ready});
+  return Object.keys(m).filter(k => !before.has(k)).length;   // how many comparisons just opened
+}
 async function loadFinals() { const rows = await fetchAll('finals', 'article_key,data'); S.finals = {}; rows.forEach(r => S.finals[r.article_key] = r.data || {}); relCache.sig = ''; }
 async function loadDrafts() {
   const rows = await fetchAll('drafts', 'article_key,data,updated_at');
@@ -2117,7 +2165,7 @@ function subscribeRealtime() {
   const t = {}; const later = (n, fn) => { clearTimeout(t[n]); t[n] = setTimeout(async () => { try { await fn(); lastSync = Date.now(); soft(); } catch {} }, 600); };
   sb.channel('npf-live')
     .on('postgres_changes', {event:'*', schema:'public', table:'articles'}, p => { if (p.eventType === 'DELETE') delete S.articles[p.old.key]; else S.articles[p.new.key] = artFromRow(p.new); later('a', async () => {}); })
-    .on('postgres_changes', {event:'*', schema:'public', table:'submissions'}, () => later('s', loadSubs))
+    .on('postgres_changes', {event:'*', schema:'public', table:'submissions'}, () => later('s', async () => { await loadSubs(); await loadPeers(); }))
     .on('postgres_changes', {event:'*', schema:'public', table:'finals'}, () => later('f', loadFinals))
     .on('postgres_changes', {event:'*', schema:'public', table:'members'}, () => later('m', loadMembers))
     .on('postgres_changes', {event:'*', schema:'public', table:'feedback'}, () => later('fb', loadFeedback))
@@ -2127,8 +2175,13 @@ function subscribeRealtime() {
       later('th', threadsChanged); })
     .subscribe();
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible' && S.mode === 'shared' && Date.now() - lastSync > 60000) later('all', async () => { await Promise.all([loadMembers(), loadSubs(), loadFinals()]); });
+    if (document.visibilityState === 'visible' && S.mode === 'shared' && Date.now() - lastSync > 60000) later('all', async () => { await Promise.all([loadMembers(), loadSubs(), loadFinals()]); await loadPeers(); });
   });
+  // coders are not told live when someone else submits (they cannot read those rows), so check now and then
+  if (!S.isAdmin) setInterval(async () => {
+    if (document.visibilityState !== 'visible') return;
+    try { const n = await loadPeers(); if (n) { soft(); toast((n === 1 ? 'A comparison just opened' : n + ' comparisons just opened') + ': everyone has coded. See Compare.', 5000); } else if (['inbox', 'compare'].includes(S.view)) soft(); } catch {}
+  }, 120000);
 }
 
 /* ================= sign-in ================= */
@@ -2186,6 +2239,7 @@ async function enter(session) {
   try { const r = await sb.from('app_config').select('value').eq('key', 'codebook').maybeSingle(); if (r.data && r.data.value) CB = {defs:SHOW_CODEBOOK ? (r.data.value.defs || []) : [], headers:r.data.value.headers || [], legend:r.data.value.legend || []}; } catch {}
   document.documentElement.classList.toggle('nocb', !(SHOW_CODEBOOK && CB.defs.length));
   try { await loadThreads(); } catch {}
+  try { await loadPeers(); } catch {}
   if (S.isAdmin) { try { await loadFeedback(); } catch {} S.view = 'progress'; } else S.view = 'inbox';
   subscribeRealtime(); entering = false; render();
   if (!S.coder) toast(S.isAdmin ? 'Give yourself a coder number under Team.' : 'You have no coder number yet. The project lead sets it under Team.', 5000);
