@@ -395,3 +395,49 @@ drop policy if exists msgs_insert on public.thread_messages; create policy msgs_
 drop policy if exists msgs_delete on public.thread_messages; create policy msgs_delete on public.thread_messages for delete to authenticated using ((select is_lead()));
 drop policy if exists reads_own on public.thread_reads; create policy reads_own on public.thread_reads for all to authenticated using (user_id = (select auth.uid())) with check (user_id = (select auth.uid()) and thread_visible(thread_id));
 revoke all on public.threads, public.thread_messages, public.thread_reads from anon;
+
+-- ================================================================ coders compare after everyone has submitted (2026-11-09)
+-- A coder can see the other codings of an article only when every coder assigned to it has submitted.
+-- What they see is each coder's FIRST submission (made blind), so nobody's later edits can prime anyone.
+-- Other coders are anonymous ("Coder A", "Coder B"; the letters are shuffled per article) and their memos are left out.
+-- Reliability is unaffected: it uses the first submissions, which the database never lets anyone change.
+
+create or replace function public.compare_status()
+returns table (article_key text, assigned int, submitted int, ready boolean)
+language sql stable security definer set search_path = public as $$
+  with mine as (
+    select a.key, a.coders,
+           (select count(distinct s.coder)::int from submissions s where s.article_key = a.key and s.coder = any(a.coders)) as n
+    from articles a
+    where not a.archived and my_coder() is not null and my_coder() = any(a.coders)
+  )
+  select m.key, cardinality(m.coders), m.n,
+         cardinality(m.coders) >= 2 and m.n = cardinality(m.coders)
+           and exists (select 1 from submissions s where s.article_key = m.key and s.user_id = auth.uid())
+  from mine m
+$$;
+
+create or replace function public.peer_codings()
+returns table (article_key text, slot text, mine boolean, data jsonb)
+language sql stable security definer set search_path = public as $$
+  with ready as (
+    select c.article_key from compare_status() c where c.ready
+  ), rows as (
+    select s.article_key, s.user_id = auth.uid() as mine,
+           coalesce(s.first_data, s.data) as d,
+           row_number() over (partition by s.article_key, s.user_id = auth.uid() order by md5(s.user_id::text || ':' || s.article_key)) as n
+    from submissions s
+    join ready r on r.article_key = s.article_key
+    join articles a on a.key = s.article_key
+    where s.coder = any(a.coders)
+  )
+  select article_key,
+         case when mine then 'You' else 'Coder ' || chr(64 + n::int) end,
+         mine,
+         case when mine then d else d - 'memo' - 'revisedAfterComparison' end
+  from rows
+  order by article_key, mine desc, n
+$$;
+
+revoke execute on function public.compare_status(), public.peer_codings() from public, anon;
+grant execute on function public.compare_status(), public.peer_codings() to authenticated;

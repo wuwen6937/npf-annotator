@@ -8,8 +8,8 @@ It runs in any browser and on phones, and can be added to the home screen like a
 
 | Who | What |
 |---|---|
-| Coders | Open the link, enter your email, tap the sign-in link (or type the code from the email). They see only the articles assigned to them and only their own codings. **Feedback** sends a message or bug report to the lead. |
-| Project lead | **Progress**: who has coded what, feedback inbox, safety copies, automatic assignment. **Compare / Reliability / Analyse / Export**: lead only. **Team** and **Articles**: manage people and texts. |
+| Coders | Open the link, enter your email, tap the sign-in link (or type the code from the email). They see only the articles assigned to them and only their own codings. Once **everyone** assigned to an article has submitted, it opens in their **Compare** tab. **Feedback** sends a message or bug report to the lead. |
+| Project lead | **Progress**: who has coded what, feedback inbox, safety copies, automatic assignment. **Compare** for every article at any time; **Reliability / Analyse / Export**: lead only. **Team** and **Articles**: manage people and texts. |
 
 **Step 1 is always the prescreening.** Coders answer three questions (topical relevance, characters, plot) above the text before they can mark anything. If the text is not relevant, or has neither characters nor a plot, they submit the prescreening and are done; the remaining columns stay empty in every export.
 
@@ -17,7 +17,9 @@ It runs in any browser and on phones, and can be added to the home screen like a
 
 **Compare** keeps the article text on screen beside the codes. Click any variable or character (or press *Next difference*, keyboard J/K) and the text shows which passages each coder marked for it, one coloured underline per coder; passages not marked by everyone are tinted. On a phone, Text and Comparison are two tabs.
 
-Coders never see each other's work; only the project lead can compare. The database enforces this, not just the screen. Articles that already have codings cannot be deleted, only archived.
+**Comparing as a coder:** an article opens in a coder's *Compare* tab only when every coder assigned to it has submitted, so nobody can be influenced by the others while still coding. Coders then see each coder's **first** submission (never later edits), the other coders are anonymous (*Coder A*, *Coder B*, shuffled per article), and memos are left out. Only that coder sees their comparison page. If they change their coding afterwards, the change is recorded as *revised after comparing* (Memos sheet in the export); reliability always uses the first submissions, which nobody can change.
+
+Before that point, coders never see each other's work. The database enforces this (functions `compare_status` and `peer_codings`), not just the screen. Articles that already have codings cannot be deleted, only archived.
 
 **Safety copies:** the database copies all codings every night (kept 30 days) and makes a full copy including article texts every Sunday (last 6 kept). The lead can download any copy under *Progress*, and should also download a backup file now and then to keep outside Supabase.
 

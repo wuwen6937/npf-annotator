@@ -442,3 +442,4 @@ img{max-width:100%}
   .cx-mnow .btn{min-width:38px;min-height:34px}
 }
 @media (max-width:860px){.cmpx .pane{overflow:visible}}
+.banner.cx-private{background:var(--sunk);margin:0 0 12px;line-height:1.5}
