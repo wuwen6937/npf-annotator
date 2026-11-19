@@ -628,8 +628,8 @@ function fieldHTML(c, f, lk) {
   else if (over && f.cat) meta += `<span>· set by hand</span>`;
   const control = f.num ? `<span class="tag" style="font-size:13px">${cur === '' ? '–' : cur}</span>` : segHTML(fieldKind(f), cur, autoish, `data-act="set" data-k="${f.k}"`, lk);
   return `<div class="fld ${need ? 'need' : ''}" id="fld-${f.k}">
-    <div class="fld-l">${cat ? `<span class="dot" style="--c:${cat.color}"></span>` : ''}<span>${esc(f.label)}</span>${f.def != null ? `<button class="q" data-act="def" data-def="${f.def}" aria-label="Definition">?</button>` : ''}</div>
-    <div class="fld-m">${esc(guidance[f.def]?.[1] || '')}</div>${control}${meta ? `<div class="fld-m">${meta}</div>` : ''}</div>`;
+    <div class="fld-l">${cat ? `<span class="dot" style="--c:${cat.color}"></span>` : ''}<span>${esc(f.label)}</span>${f.def != null ? `<button class="q" data-act="def" data-def="${f.def}" aria-label="Hint for ${esc(f.label)}">?</button>` : ''}</div>
+    ${control}${meta ? `<div class="fld-m">${meta}</div>` : ''}</div>`;
 }
 function charHTML(c, ch, i, lk) {
   const acts = c.anns.filter(a => a.cat === 'action' && a.c === ch.id), ments = c.anns.filter(a => a.cat === 'char' && a.c === ch.id);
@@ -672,7 +672,7 @@ function renderPanel() {
         + (lk ? '' : `<button class="btn sm" data-act="chadd">+ Add character without text mark</button>`)
         + fs.map(f => fieldHTML(c, f, lk)).join('');
     }
-    return `<div class="sec"><div class="sec-h">${esc(sec)}<button class="q" data-act="def" data-def="${SEC_DEF[sec] ?? 41}" aria-label="Definition">?</button></div>${inner}</div>`;
+    return `<div class="sec"><div class="sec-h">${esc(sec)}<button class="q" data-act="def" data-def="${SEC_DEF[sec] ?? 41}" aria-label="Hint for ${esc(sec)}">?</button></div>${inner}</div>`;
   }).join('');
   const gate = out ? `<div class="sec"><div class="ps-out" style="margin:4px 0 0"><b>Screened out:</b> ${outReason(c)}. Nothing else to code for this article.</div></div>`
     : !pre ? `<div class="sec"><p class="small" style="margin:4px 0 0">Read the whole text first, then answer the prescreening (here or at the end of the text). The rest of the coding sheet opens after that.</p></div>` : '';
@@ -1319,10 +1319,40 @@ async function doExport(k, copy) {
 /* ================= modals ================= */
 function modal(html, wide) { const m = $('#modal'); m.innerHTML = `<div class="mbox" role="dialog" aria-modal="true" ${wide ? 'style="max-width:980px"' : ''}>${html}</div>`; m.hidden = false; }
 function closeModal() { $('#modal').hidden = true; $('#modal').innerHTML = ''; }
-function openDef(i) {
-  const entry = guidance[i];
-  if (entry) openCodebook(entry[0], entry[1]);
+function closeHint() {
+  const tip = document.getElementById('coding-hint');
+  if (!tip) return;
+  tip.previousElementSibling?.removeAttribute('aria-describedby');
+  tip.remove();
 }
+function openDef(button) {
+  const wasOpen = button.getAttribute('aria-describedby') === 'coding-hint';
+  closeHint();
+  const entry = guidance[button.dataset.def];
+  if (wasOpen || !entry) return;
+  const tip = document.createElement('span');
+  tip.id = 'coding-hint';
+  tip.setAttribute('role','tooltip');
+  tip.textContent = entry[1];
+  button.after(tip);
+  button.setAttribute('aria-describedby',tip.id);
+  const rect = button.getBoundingClientRect();
+  const gap = 6, margin = 8;
+  const width = tip.offsetWidth, height = tip.offsetHeight;
+  const left = Math.min(rect.left, window.innerWidth - width - margin);
+  const top = rect.bottom + gap + height <= window.innerHeight - margin
+    ? rect.bottom + gap : rect.top - height - gap;
+  tip.style.left = Math.max(margin,left) + 'px';
+  tip.style.top = Math.max(margin,top) + 'px';
+}
+document.addEventListener('pointerdown', e => {
+  if (!e.target.closest('[data-act="def"], #coding-hint')) closeHint();
+});
+document.addEventListener('focusin', e => {
+  if (!e.target.matches('[aria-describedby="coding-hint"]')) closeHint();
+});
+document.addEventListener('scroll',closeHint,true);
+window.addEventListener('resize',closeHint);
 function openCodebook(part, hint) {
   const chapters = bookChapters.map(([title,body],i) =>
     `<details ${part === i+1 ? 'open' : ''}><summary>${esc(title)}</summary><p style="white-space:pre-wrap">${esc(body)}</p></details>`).join('');
@@ -1563,7 +1593,7 @@ document.addEventListener('click', async e => {
     case 'relds': S.rel.ds = d.v; renderView(); break;
     case 'copymethods': copyText($('#methods').textContent, 'Methods paragraph copied.'); break;
     case 'antab': S.an.tab = d.v; renderView(); break;
-    case 'def': openDef(d.def); break;
+    case 'def': openDef(t); break;
     case 'codebook': openCodebook(); break;
     case 'coder': openAccount(); break;
     case 'pickcoder': pickCoder(d.v, d.then === '1'); break;
@@ -1613,7 +1643,7 @@ function updatePn() {
 document.addEventListener('input', e => { if (e.target.closest && e.target.closest('#panel')) updatePn(); });
 document.addEventListener('keydown', e => {
   const typing = /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName);
-  if (e.key === 'Escape') { if (S.menu && S.menu.type === 'char') { showTagMenu(S.menu.rect); e.preventDefault(); return; } if (!$('#modal').hidden) { closeModal(); return; } hidePop(); return; }
+  if (e.key === 'Escape') { if ($('#coding-hint')) { closeHint(); return; } if (S.menu && S.menu.type === 'char') { showTagMenu(S.menu.rect); e.preventDefault(); return; } if (!$('#modal').hidden) { closeModal(); return; } hidePop(); return; }
   if (e.key === 'Enter' && e.target.classList && e.target.classList.contains('selrow')) { e.preventDefault(); e.target.click(); return; }
   if (S.view === 'compare' && !typing && !e.ctrlKey && !e.metaKey && !e.altKey && (e.key === 'j' || e.key === 'k')) { e.preventDefault(); cmpStep(e.key === 'j' ? 1 : -1); return; }
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !typing && S.view === 'code') {

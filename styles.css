@@ -443,3 +443,20 @@ img{max-width:100%}
 }
 @media (max-width:860px){.cmpx .pane{overflow:visible}}
 .banner.cx-private{background:var(--sunk);margin:0 0 12px;line-height:1.5}
+
+#coding-hint {
+  position: fixed;
+  z-index: 80;
+  box-sizing: border-box;
+  width: min(260px, calc(100vw - 16px));
+  padding: 9px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--ink);
+  box-shadow: 0 3px 12px #0002;
+  font: normal 13px/1.45 system-ui, sans-serif;
+  text-transform: none;
+  letter-spacing: normal;
+  white-space: normal;
+}
