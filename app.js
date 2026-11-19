@@ -48,6 +48,7 @@ const CATS = [
   {id:'solution', short:'Tech solution', label:'Technology framed as a solution', key:'g', grp:'Technology reference', color:'#475569', def:41},
   {id:'tech',    short:'Technology',    label:'Technology in the plot',                key:'', grp:'Legacy',       color:'#475569', def:41, plot:true},
   {id:'pos',     short:'Positive turn', label:'Positive turn (success, progress)',     key:'+', grp:'Plot',       color:'#16a34a', def:42, plot:true},
+  {id:'mixed', short:'Mixed outcome', label:'Mixed plot (gains and unresolved setbacks)', key:'b', grp:'Plot', color:'#a16207', def:42, plot:true},
   {id:'neg',     short:'Negative turn', label:'Negative turn (decline, failure)',      key:'-', grp:'Plot',       color:'#9f1239', def:42, plot:true, dash:true},
   {id:'mpol',    short:'Policy moral',  label:'Moral: policy type',                    key:'m', grp:'Moral',      color:'#ca8a04', def:45},
   {id:'mideo',   short:'Ideol. moral',  label:'Moral: ideological type',               key:'i', grp:'Moral',      color:'#0284c7', def:46},
@@ -180,7 +181,8 @@ function buildExample(key, ex) {
 const EXAMPLE_SUBS = {exA: buildExample('practice-en', EXAMPLE_CODINGS.exA), exB: buildExample('practice-en', EXAMPLE_CODINGS.exB)};
 
 /* ---------- local persistence ---------- */
-const LKEY = 'npf-annotator:v1';
+const demo = new URLSearchParams(location.search).get('preview') === 'coding';
+const LKEY = demo ? 'npf-annotator:practice-preview' : 'npf-annotator:v1';
 function loadLocal() {
   const d = LS.get(LKEY, {});
   S.practiceSubs = d.practiceSubs || {};
@@ -249,6 +251,7 @@ function auto(c, k) {
   if (k === 'moral') return {v:['mpol','mideo'].some(key => c.codes?.[key] === 1 || anns.some(a => a.cat === key)) ? 1 : 0, why:'Based on moral passages'};
   if (f.cat) { const n = anns.filter(a => a.cat === f.cat && (!f.plot || (a.p || 1) === f.plot)).length; return {v:n ? 1 : 0, n, why:n ? n + ' marked in text' : 'nothing marked yet'}; }
   if (f.ptype) {
+    if (anns.some(a => a.cat === 'mixed' && (a.p || 1) === f.ptype)) return {v:3, why:'Mixed outcome marked in text'};
     const pos = anns.filter(a => a.cat === 'pos' && (a.p || 1) === f.ptype).length, neg = anns.filter(a => a.cat === 'neg' && (a.p || 1) === f.ptype).length;
     if (pos && !neg) return {v:1, why:pos + ' positive turn' + (pos > 1 ? 's' : '')};
     if (neg && !pos) return {v:2, why:neg + ' negative turn' + (neg > 1 ? 's' : '')};
@@ -556,11 +559,11 @@ function renderReader() {
     ${preTop(c, lk)}
     ${!S.hintOff && !lk && preDone(c) && !screenedOut(c) ? `<div class="hint"><span><b>${matchMedia('(pointer: coarse)').matches ? 'Press and hold a word, drag to cover the passage, then pick a category.' : 'Select a passage and choose its category.'}</b> Select a highlight to edit or remove it.</span><button data-act="hintoff" aria-label="Hide tip">✕</button></div>` : ''}
     <div class="rd-bar">
-      ${S.mode === 'shared' && !a.practice ? (() => { const ts = threadsFor(a.key), op = ts.filter(t => t.status === 'open').length, un = ts.filter(isUnread).length; return `<button class="btn sm" data-act="discuss" title="Questions and discussion with the other coders of this article">Discuss${op ? ` <span class="badge soft">${op}</span>` : ''}${un ? ' <span class="badge">new</span>' : ''}</button>`; })() : ''}
+      ${canDiscuss() ? (() => { const ts = threadsFor(a.key), op = ts.filter(t => t.status === 'open').length, un = ts.filter(isUnread).length; return `<button class="btn sm" data-act="dnew">⚑ Flag for discussion</button><button class="btn sm" data-act="discuss" title="Questions and discussion with the other coders of this article">Discuss${op ? ` <span class="badge soft">${op}</span>` : ''}${un ? ' <span class="badge">new</span>' : ''}</button>`; })() : ''}
       <span class="savest"></span>
       <span class="legend">${CATS.filter(x => counts[x.id]).map(x => `<button class="lg ${S.hidden[x.id] ? 'off' : ''}" style="--c:${x.color}" data-act="lg" data-cat="${x.id}" title="Show or hide"><i></i>${x.short}<b>${counts[x.id]}</b></button>`).join('') || '<span>Nothing marked yet</span>'}</span>
     </div>
-    <div id="txt" class="txt ${screenedOut(c) ? 'out' : ''}" lang="${a.dataset === '1' ? 'zh' : 'en'}">${textHTML(a.text, c.anns.filter(x => !S.hidden[x.cat]), c, S.mode === 'shared' && !a.practice ? threadsFor(a.key).filter(t => t.status === 'open') : [])}</div>
+    <div id="txt" class="txt ${screenedOut(c) ? 'out' : ''}" lang="${a.dataset === '1' ? 'zh' : 'en'}">${textHTML(a.text, c.anns.filter(x => !S.hidden[x.cat]), c, canDiscuss() ? threadsFor(a.key).filter(t => t.status === 'open') : [])}</div>
     ${preBottom(c, lk)}
   </div>`;
 }
@@ -720,7 +723,7 @@ function checkSel() {
   while (s < e && /\s/.test(text[s])) s++; while (e > s && /\s/.test(text[e - 1])) e--;
   if (a.dataset !== '1') { const W = /[A-Za-z0-9À-ɏ]/; while (s > 0 && W.test(text[s - 1]) && W.test(text[s])) s--; while (e < text.length && W.test(text[e]) && W.test(text[e - 1])) e++; }
   if (e <= s) return;
-  const canFlag = S.mode === 'shared' && !isPractice(S.cur);
+  const canFlag = canDiscuss();
   if (locked(S.cur)) { if (canFlag) { S.sel = {s, e, t:text.slice(s, e)}; return showFlagOnlyMenu(r.getBoundingClientRect(), 'This coding is submitted. Choose “Edit again” to change your marks.'); } toast('This coding is submitted. Choose “Edit again” to change it.'); return; }
   { const c0 = draft(S.cur);
     if (canFlag && (screenedOut(c0) || !preDone(c0))) { S.sel = {s, e, t:text.slice(s, e)}; return showFlagOnlyMenu(r.getBoundingClientRect(), screenedOut(c0) ? 'This text is screened out, so no marks are needed.' : 'Marking opens after the prescreening questions below the text.'); }
@@ -737,7 +740,7 @@ function showTagMenu(rect) {
   pop.innerHTML = `<div class="pop-sel">“${esc(S.sel.t.length > 120 ? S.sel.t.slice(0, 120) + '…' : S.sel.t)}”</div>` + groups.map(g => `
     <div class="pop-g"><span>${g}</span></div>
     <div class="pop-gi">${choices.filter(c => c.grp === g).map(c => `<button class="pop-i" data-act="tag" data-cat="${c.id}"><span class="dot" style="--c:${c.color}"></span>${c.label}<kbd>${c.key.toUpperCase()}</kbd></button>`).join('')}</div>`).join('');
-  if (S.mode === 'shared' && !isPractice(S.cur)) pop.insertAdjacentHTML('beforeend', `<div class="pop-g"><span>Discuss</span></div><div class="pop-gi"><button class="pop-i" data-act="flagsel"><span class="dot" style="--c:#b45309"></span>Flag for discussion<kbd>F</kbd></button></div>`);
+  if (canDiscuss()) pop.insertAdjacentHTML('beforeend', `<div class="pop-g"><span>Discuss</span></div><div class="pop-gi"><button class="pop-i" data-act="flagsel"><span class="dot" style="--c:#b45309"></span>Flag for discussion<kbd>F</kbd></button></div>`);
   placePop(rect);
 }
 function showCharMenu(cat) {
@@ -1618,7 +1621,7 @@ document.addEventListener('keydown', e => {
     const c = draft(u.key); c.anns = u.anns; c.chars = u.chars; S.cur = u.key; changed(); toast('Undone'); return;
   }
   if (typing || e.ctrlKey || e.metaKey || e.altKey || !S.menu) return;
-  if ((S.menu.type === 'tag' || S.menu.type === 'flag') && e.key.toLowerCase() === 'f' && S.mode === 'shared' && !isPractice(S.cur)) { e.preventDefault(); flagSelection(); return; }
+  if ((S.menu.type === 'tag' || S.menu.type === 'flag') && e.key.toLowerCase() === 'f' && canDiscuss()) { e.preventDefault(); flagSelection(); return; }
   if (S.menu.type === 'tag') { const cat = KEYCAT[e.key.toLowerCase()]; if (cat) { e.preventDefault(); chooseCat(cat); } return; }
   if (S.menu.type === 'char') { const c = draft(S.cur);
     if (e.key === 'Enter' && S.menu.cat === 'char') { e.preventDefault(); newChar(); return; }
@@ -1820,7 +1823,7 @@ function renderDrawer() {
   const a = art(S.cur); if (!a) { d.hidden = true; return; }
   const v = S.dsc.view; d.hidden = false;
   const head = (title, back) => `<div class="dr-h">${back ? `<button class="ic" data-act="dback" aria-label="Back to all discussions">←</button>` : ''}<b>${title}</b><button class="ic" data-act="dclose" aria-label="Close" style="margin-left:auto">✕</button></div>`;
-  const note = `<p class="small dr-note">Ask about the text or the codebook. Please don't share your own codes before everyone has submitted, so the codings stay independent.</p>`;
+  const note = demo ? '<p class="small dr-note">Practice flags stay in this preview. Shared articles send flags to the team.</p>' : `<p class="small dr-note">Ask about the text or the codebook. Please don't share your own codes before everyone has submitted, so the codings stay independent.</p>`;
   if (v === 'new') {
     d.innerHTML = head('New question · ' + esc(a.id), true) + `<div class="dr-b">
       ${S.dsc.quote ? `<blockquote class="dq" lang="${a.dataset === '1' ? 'zh' : 'en'}">“${esc(S.dsc.quote.t.slice(0, 300))}”</blockquote>` : '<p class="small">About the whole article. To ask about a passage, select it in the text and choose “Flag for discussion”.</p>'}
@@ -1858,6 +1861,12 @@ function renderDrawer() {
 async function postThread() {
   const body = $('#dmsg').value.trim(); if (!body) { toast('Write your question first.'); return; }
   const tags = [...(S.dsc.tags || [])]; const q = S.dsc.quote;
+  if (demo) {
+    const id = Date.now();
+    S.threads[id] = {id,article_key:S.cur,s:q?.s,e:q?.e,quote:q?.t,status:'open',created_by:S.uid,created_at:now(),updated_at:now(),mentions:tags};
+    S.msgs[id] = [{body,user_id:S.uid,created_at:now(),mentions:tags}];
+    openDrawer('thread',{tid:id}); renderReader(); return;
+  }
   if (S.mode !== 'shared') { toast('Discussions work in the shared project.'); return; }
   const {data, error} = await sb.from('threads').insert({article_key:S.cur, s:q ? q.s : null, e:q ? q.e : null, quote:q ? q.t.slice(0, 1000) : '', mentions:tags}).select().single();
   if (error) { toast('Could not post: ' + error.message); return; }
@@ -1870,17 +1879,23 @@ async function postThread() {
 async function postReply() {
   const body = $('#dmsg').value.trim(); if (!body) { toast('Write a reply first.'); return; }
   const tags = [...(S.dsc.tags || [])];
+  if (demo) {
+    S.msgs[S.dsc.tid].push({body,user_id:S.uid,created_at:now(),mentions:tags});
+    S.threads[S.dsc.tid].updated_at = now(); renderDrawer(); return;
+  }
   const {error} = await sb.from('thread_messages').insert({thread_id:S.dsc.tid, body, mentions:tags});
   if (error) { toast('Could not send: ' + error.message); return; }
   if (tags.length) { const t = S.threads[S.dsc.tid]; const m = [...new Set([...(t.mentions || []), ...tags])]; await sb.from('threads').update({mentions:m}).eq('id', t.id); }
   await loadThreads(); S.dsc.tags = null; openDrawer('thread', {tid:S.dsc.tid});
 }
 async function setThreadStatus(v) {
+  if (demo) { S.threads[S.dsc.tid].status = v; renderDrawer(); renderReader(); return; }
   const patch = v === 'resolved' ? {status:v, resolved_by:S.uid, resolved_at:now()} : {status:v, resolved_by:null, resolved_at:null};
   const {error} = await sb.from('threads').update(patch).eq('id', S.dsc.tid);
   if (error) { toast('Could not change it: ' + error.message); return; }
   await loadThreads(); openDrawer('thread', {tid:S.dsc.tid}); renderReader();
 }
+function canDiscuss() { return demo || (S.mode === 'shared' && !isPractice(S.cur)); }
 function flagSelection() {
   if (!S.sel) return; const q = {...S.sel}; hidePop(); getSelection().removeAllRanges(); S.dsc.tags = null;
   openDrawer('new', {quote:q});
@@ -2332,6 +2347,11 @@ function goLocal(reason) {
 }
 async function boot() {
   loadLocal();
+  if (demo) {
+    S.cur = 'practice-en'; S.mpane = 'sheet';
+    if (!draft(S.cur,false)) Object.assign(draft(S.cur).codes,{p1:1,p2:1,p3:1});
+    goLocal('Codebook 2.3 practice preview'); return;
+  }
   if (!CFG.supabaseUrl || !CFG.supabaseAnonKey || !window.supabase) return goLocal('No backend configured yet: work stays in this browser.');
   sb = window.supabase.createClient(CFG.supabaseUrl, CFG.supabaseAnonKey, {auth:{persistSession:true, autoRefreshToken:true, detectSessionInUrl:true, flowType:'implicit'}});
   sb.auth.onAuthStateChange((ev, session) => { if (session && (ev === 'SIGNED_IN' || ev === 'INITIAL_SESSION')) setTimeout(() => enter(session), 0); if (ev === 'SIGNED_OUT') location.reload(); });
