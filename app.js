@@ -2,10 +2,35 @@
 /* ================= codebook (from 261020_Coding_Table_shortened.xlsx) ================= */
 // The codebook text is not part of the public code. After sign-in the app loads the
 // codebook from the protected database after sign-in (definitions for the team, headings for exports).
-let CB = {defs:[], headers:[], legend:[]};
-const SHOW_CODEBOOK = true;
-document.documentElement.classList.add('nocb');
-const DEF = i => CB.defs[i] || ['', ''];
+let bookChapters = [];
+const guidance = {
+  8:[1,'Answer all three screening questions after reading the whole article.'],
+  9:[1,'Look for a China-related energy transition story in which a named Chinese actor plays a part.'],
+  10:[1,'Look for a uniquely named entity whose action or experience matters to the story.'],
+  11:[1,'Look for a change of state or a connected chain of claims.'],
+  13:[3,'Mark the passage that supports each reference.'],
+  14:[3,'Count direct quotations and indirect attributions to Xi Jinping. His name alone is insufficient.'],
+  15:[3,'Look for a specific CCP document, institution, event or slogan. Distinguish Party references from state bodies.'],
+  16:[3,'Look for a Western or Western-led document, concept or regulation. A venue or organization alone is insufficient.'],
+  17:[3,'Choose Yes for a critical reference and No for a neutral or positive one.'],
+  18:[4,'Identify the static starting context of the first narrative.'],
+  19:[4,'Mark every explicit location that anchors the beginning. Exclude publication datelines.'],
+  20:[4,'Mark an explicit starting date or period. Relative dates that require outside context do not qualify.'],
+  22:[5,'Record uniquely named actors in order of appearance.'],
+  24:[5,'Check whether removing this actor would change a cause, action, harm, benefit or outcome.'],
+  25:[5,'Mark all actions performed by or directed at this character.'],
+  26:[5,'Classify the capacity in which the actor appears. Companies count as domain-level.'],
+  31:[5,'Assign the role shown by the action. Choose Unclear for ambiguous or changing roles.'],
+  37:[5,'Count valid characters in their order of appearance.'],
+  38:[5,'Count heroes, villains, victims and beneficiaries. Exclude unclear roles.'],
+  40:[6,'Follow the first narrative and trace its connected events or arguments.'],
+  42:[6,'Consider the ending. A resolved setback can be positive. Gains with an unresolved setback can be mixed.'],
+  44:[7,'Look for the overall prescription, lesson or value judgment.'],
+  45:[7,'Look for a recommended action, policy instrument, target or lesson.'],
+  46:[7,'Look for a takeaway that praises, criticizes or prescribes a principle or value. Both moral types may apply.'],
+  41:[8,'Mark each specific device, system or technological output presented as a transition solution. Exclude generic terms and raw fuels.'],
+  49:[9,'Include all starting settings, up to four coded characters, the plot and any morals. Review and edit the draft.']
+};
 
 /* ================= constants ================= */
 const CODERS = [
@@ -13,7 +38,7 @@ const CODERS = [
   {code:'4', ini:'HR'}, {code:'5', ini:'GJL'}, {code:'6', ini:'AD'}, {code:'7', ini:'CC'}
 ];
 const CATS = [
-  {id:'xi',      short:'Xi quote',      label:'Xi Jinping quoted',                     key:'x', grp:'Ideology',   color:'#c2410c', def:14},
+  {id:'xi',      short:'Reference to Xi Jinping',      label:'Reference to Xi Jinping',                     key:'x', grp:'Ideology',   color:'#c2410c', def:14},
   {id:'party',   short:'Party / tifa',   label:'Party document / institution / event / tifa',  key:'p', grp:'Ideology',   color:'#dc2626', def:15},
   {id:'west',    short:'Western ref.',  label:'Western or Western-led document, concept or regulation',key:'w', grp:'Ideology',   color:'#2563eb', def:16},
   {id:'spatial', short:'Place',         label:'Spatial setting (place)',               key:'s', grp:'Setting',    color:'#0d9488', def:19},
@@ -36,10 +61,10 @@ const F = [
   {k:'p1', sec:'Prescreening', label:'Topical relevance', def:9},
   {k:'p2', sec:'Prescreening', label:'Characters recognisable', def:10},
   {k:'p3', sec:'Prescreening', label:'Plot recognisable', def:11},
-  {k:'xi', sec:'Level of ideology', label:'Xi Jinping quoted', def:14, cat:'xi'},
+  {k:'xi', sec:'Level of ideology', label:'Reference to Xi Jinping', def:14, cat:'xi'},
   {k:'party', sec:'Level of ideology', label:'Party document / institution / event / tifa', def:15, cat:'party'},
   {k:'west', sec:'Level of ideology', label:'Western or Western-led document, concept or regulation', def:16, cat:'west'},
-  {k:'critical', sec:'Level of ideology', label:'Western reference framed critically', def:16, dep:'west'},
+  {k:'critical', sec:'Level of ideology', label:'Western reference framed critically', def:17, dep:'west'},
   {k:'spatial', sec:'Setting', label:'Spatial setting', def:19, cat:'spatial'},
   {k:'temporal', sec:'Setting', label:'Temporal setting', def:20, cat:'temporal'},
   {k:'more4', sec:'Characters', label:'More than four characters', def:37, fromChars:true},
@@ -431,7 +456,7 @@ function renderTop() {
     ${tabs.length ? `<nav class="tabs" aria-label="Views">${tabs.map(([k, l]) => `<button data-act="view" data-v="${k}" class="${S.view === k ? 'on' : ''}">${l}</button>`).join('')}</nav>` : S.mode === 'shared' ? `<span class="myprog" title="Your assigned articles"><b>${qd}</b> of ${q.length} done<span class="abar"><i style="width:${q.length ? qd / q.length * 100 : 0}%;background:var(--good)"></i></span></span>` : ''}
     <div class="tools">
       <span class="sync ${sy.s === 'saved' ? 'ok' : sy.s === 'saving' ? 'busy' : sy.s === 'error' ? 'err' : ''}" title="${esc(sy.msg)}"><i></i>${esc(sy.label || (S.mode === 'shared' ? 'Shared project' : S.mode === 'loading' ? 'Connecting…' : 'This browser only'))}</span>
-      ${SHOW_CODEBOOK && CB.defs.length ? '<button class="btn sm" data-act="codebook">Codebook</button>' : ''}
+      <button class="btn sm" data-act="codebook">Codebook</button>
       ${S.isAdmin ? `<button class="btn sm" data-act="articles">Articles</button>` : ''}
       ${S.isAdmin && S.mode === 'shared' ? `<button class="btn sm" data-act="team">Team</button>` : ''}
       ${S.mode === 'shared' ? `<button class="btn sm" data-act="feedback">Feedback</button>` : ''}
@@ -601,7 +626,7 @@ function fieldHTML(c, f, lk) {
   const control = f.num ? `<span class="tag" style="font-size:13px">${cur === '' ? '–' : cur}</span>` : segHTML(fieldKind(f), cur, autoish, `data-act="set" data-k="${f.k}"`, lk);
   return `<div class="fld ${need ? 'need' : ''}" id="fld-${f.k}">
     <div class="fld-l">${cat ? `<span class="dot" style="--c:${cat.color}"></span>` : ''}<span>${esc(f.label)}</span>${f.def != null ? `<button class="q" data-act="def" data-def="${f.def}" aria-label="Definition">?</button>` : ''}</div>
-    ${control}${meta ? `<div class="fld-m">${meta}</div>` : ''}</div>`;
+    <div class="fld-m">${esc(guidance[f.def]?.[1] || '')}</div>${control}${meta ? `<div class="fld-m">${meta}</div>` : ''}</div>`;
 }
 function charHTML(c, ch, i, lk) {
   const acts = c.anns.filter(a => a.cat === 'action' && a.c === ch.id), ments = c.anns.filter(a => a.cat === 'char' && a.c === ch.id);
@@ -1292,17 +1317,16 @@ async function doExport(k, copy) {
 function modal(html, wide) { const m = $('#modal'); m.innerHTML = `<div class="mbox" role="dialog" aria-modal="true" ${wide ? 'style="max-width:980px"' : ''}>${html}</div>`; m.hidden = false; }
 function closeModal() { $('#modal').hidden = true; $('#modal').innerHTML = ''; }
 function openDef(i) {
-  if (!SHOW_CODEBOOK || !CB.defs.length) return;
-  const [t, d] = DEF(+i); const rows = [];
-
-  modal(`<div class="mh"><h2>${esc(t)}</h2><button class="x" data-act="close" aria-label="Close">×</button></div><p style="white-space:pre-wrap;font:15px/1.6 var(--read)">${esc(d)}</p>${rows.map(r => `<div class="cb-i"><b>${esc(r[0])}</b><p>${esc(r[1])}</p></div>`).join('')}`);
+  const entry = guidance[i];
+  if (entry) openCodebook(entry[0], entry[1]);
 }
-function openCodebook() {
-  if (!SHOW_CODEBOOK || !CB.defs.length) return;
-  let h = '';
-  CB.defs.filter((row,i,all) => row[0] && all.findIndex(other => other[0] === row[0]) === i).sort((a,b) => a[0].localeCompare(b[0])).forEach(([t, d]) => { if (!t) return; const isSec = /^[A-Z ]+$/.test(t.trim()) || /^EBENE LEVELS|PRECODED/.test(t); h += isSec ? `<div class="cb-sec">${esc(t)}</div>${d ? `<p style="color:var(--muted);margin:0 0 6px">${esc(d)}</p>` : ''}` : `<div class="cb-i"><b>${esc(t)}</b>${d ? `<p>${esc(d)}</p>` : ''}</div>`; });
-  modal(`<div class="mh"><div><h2>Codebook 2.3</h2><p class="sub">Definitions from the coding table. The same text opens from every “?”.</p></div><button class="x" data-act="close" aria-label="Close">×</button></div>
-    <div class="cb-sec">Shortcut keys while text is selected</div><div class="keyrow" style="margin-bottom:8px">${CATS.map(c => `<span><i style="background:${c.color}"></i>${c.key.toUpperCase()} ${c.short}</span>`).join('')}<span>Ctrl/⌘ Z undo</span></div>${h}`, true);
+function openCodebook(part, hint) {
+  const chapters = bookChapters.map(([title,body],i) =>
+    `<details ${part === i+1 ? 'open' : ''}><summary>${esc(title)}</summary><p style="white-space:pre-wrap">${esc(body)}</p></details>`).join('');
+  const quick = Object.values(guidance).map(([n,text]) => `<p><b>Part ${n}</b> · ${esc(text)}</p>`).join('');
+  modal(`<div class="mh"><h2>Codebook 2.3</h2><button class="x" data-act="close" aria-label="Close">×</button></div>
+    ${hint ? `<p><strong>${esc(hint)}</strong></p>` : ''}
+    ${chapters || '<p>Sign in to the team workspace to read the full codebook. Coding hints are available here.</p>' + quick}`,true);
 }
 function openCoder(thenSubmit) {
   const taken = {}; Object.entries(S.profiles).forEach(([u, p]) => { if (u !== S.uid && p.coder) taken[p.coder] = true; });
@@ -2204,6 +2228,7 @@ function subscribeRealtime() {
 /* ================= sign-in ================= */
 const redirectUrl = () => location.origin + location.pathname;
 function authShell(inner) {
+  bookChapters = [];
   $('#top').innerHTML = `<div class="brand"><span class="mark" aria-hidden="true">叙</span>NPF Annotator</div>`;
   $('#view').innerHTML = `<div class="auth"><div class="auth-card"><span class="mark big" aria-hidden="true">叙</span><h1>NPF Annotator</h1><p class="sub">${esc(CFG.projectName || 'Narrative coding')}</p>${inner}</div></div>`;
 }
@@ -2253,8 +2278,11 @@ async function enter(session) {
   catch (e) { S.sync = {s:'error', label:'Could not load everything', msg:e.message}; }
   if (!S.isAdmin) { const W = myWork(); const first = W.todo[0] || W.done[0]; if (first) S.cur = first.key; }
   else if (corpus().length && isPractice(S.cur) && LS.get('npf:practiced', false)) S.cur = (nextKey() || S.cur);
-  try { const r = await sb.from('app_config').select('value').eq('key', 'codebook').maybeSingle(); if (r.data?.value?.version === '2.3') CB = {defs:SHOW_CODEBOOK ? (r.data.value.defs || []) : [], headers:r.data.value.headers || [], legend:r.data.value.legend || []}; } catch {}
-  document.documentElement.classList.toggle('nocb', !(SHOW_CODEBOOK && CB.defs.length));
+  bookChapters = [];
+  try {
+    const {data} = await sb.from('app_config').select('value').eq('key','codebook').maybeSingle();
+    if (Array.isArray(data?.value?.book23)) bookChapters = data.value.book23;
+  } catch {}
   try { await loadThreads(); } catch {}
   try { await loadPeers(); } catch {}
   if (S.isAdmin) { try { await loadFeedback(); } catch {} S.view = 'progress'; } else S.view = 'inbox';
@@ -2296,6 +2324,7 @@ async function teamUpdate(email, patch) {
 
 /* ================= boot ================= */
 function goLocal(reason) {
+  bookChapters = [];
   S.mode = 'local'; S.uid = 'local'; S.isAdmin = true;
   S.articles = S.local.articles; S.subs = S.local.subs; S.finals = S.local.finals; S.profiles = S.local.profiles; S.drafts = S.local.drafts; S.coder = S.local.coder || '';
   S.sync = {s:'idle', label:'Practice mode · this device only', msg:reason || ''};

@@ -13,7 +13,7 @@ It runs in any browser and on phones, and can be added to the home screen like a
 
 **Step 1 is always the prescreening.** Coders answer three questions (topical relevance, characters, plot) above the text before they can mark anything. If the text is not relevant, or has neither characters nor a plot, they submit the prescreening and are done; inapplicable fields receive −1 in the Results sheets.
 
-Codebook 2.3 limits texts to 1,000 non-whitespace characters for Chinese and 2,000 words for other languages. Code the first narrative. The Results sheets identify the coding version and include actions for each of the first four characters. Earlier submissions retain their original passages and snapshots in the backup. The protected codebook setting must carry version `2.3` to display its definitions.
+Codebook 2.3 limits texts to 1,000 non-whitespace characters for Chinese and 2,000 words for other languages. Code the first narrative. The Results sheets identify the coding version and include actions for each of the first four characters. Earlier submissions retain their original passages and snapshots in the backup. Coders can open Codebook from the toolbar or use a field’s question mark to open its chapter. The nine private chapters are stored in the book23 property of the team codebook setting.
 
 **Discussions:** while coding, a coder can flag a passage (or ask about the whole article) and tag the other coders of that article or the lead. Threads appear in everyone's *My work*. Only people assigned to the article and the lead can read them. Reliability can leave out articles that were discussed before all coders had submitted.
 
