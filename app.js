@@ -4,12 +4,6 @@
 // codebook from the protected database after sign-in (definitions for the team, headings for exports).
 let CB = {defs:[], headers:[], legend:[]};
 const SHOW_CODEBOOK = true;
-const GENERIC_HEADERS = ['Article ID','Coder','Dataset','URL','Prescreening 1','Prescreening 2','Prescreening 3','Xi quoted','Party reference','Western reference','Spatial setting','Temporal setting',
-  'Char 1 name','Char 1 valid','Char 1 action','Char 1 PRC','Char 1 level','Char 1 role','Char 2 name','Char 2 valid','Char 2 PRC','Char 2 level','Char 2 role',
-  'Char 3 name','Char 3 valid','Char 3 PRC','Char 3 level','Char 3 role','Char 4 name','Char 4 valid','Char 4 PRC','Char 4 level','Char 4 role',
-  'More than four characters','Characters with clear role','Plot 1 technology','Plot 1 type','Plot 2 exists','Plot 2 technology','Plot 2 type','Moral policy','Moral ideological','Narrative summary'];
-const resHeaders = () => CB.headers && CB.headers.length === 43 ? CB.headers : GENERIC_HEADERS;
-const resLegend = () => CB.legend && CB.legend.length === 43 ? CB.legend : GENERIC_HEADERS.map(() => '');
 document.documentElement.classList.add('nocb');
 const DEF = i => CB.defs[i] || ['', ''];
 
@@ -21,12 +15,13 @@ const CODERS = [
 const CATS = [
   {id:'xi',      short:'Xi quote',      label:'Xi Jinping quoted',                     key:'x', grp:'Ideology',   color:'#c2410c', def:14},
   {id:'party',   short:'Party / tifa',   label:'Party document / institution / event / tifa',  key:'p', grp:'Ideology',   color:'#dc2626', def:15},
-  {id:'west',    short:'Western ref.',  label:'Western document / institution / event',key:'w', grp:'Ideology',   color:'#2563eb', def:16},
+  {id:'west',    short:'Western ref.',  label:'Western or Western-led document, concept or regulation',key:'w', grp:'Ideology',   color:'#2563eb', def:16},
   {id:'spatial', short:'Place',         label:'Spatial setting (place)',               key:'s', grp:'Setting',    color:'#0d9488', def:19},
   {id:'temporal',short:'Time',          label:'Temporal setting (time)',               key:'t', grp:'Setting',    color:'#65a30d', def:20},
   {id:'char',    short:'Character',     label:'Character',                             key:'c', grp:'Characters', color:'#7c3aed', def:22},
   {id:'action',  short:'Action',        label:'Character action',                      key:'a', grp:'Characters', color:'#db2777', def:25},
-  {id:'tech',    short:'Technology',    label:'Technology in the plot',                key:'g', grp:'Plot',       color:'#475569', def:41, plot:true},
+  {id:'solution', short:'Tech solution', label:'Technology framed as a solution', key:'g', grp:'Technology reference', color:'#475569', def:41},
+  {id:'tech',    short:'Technology',    label:'Technology in the plot',                key:'', grp:'Legacy',       color:'#475569', def:41, plot:true},
   {id:'pos',     short:'Positive turn', label:'Positive turn (success, progress)',     key:'+', grp:'Plot',       color:'#16a34a', def:42, plot:true},
   {id:'neg',     short:'Negative turn', label:'Negative turn (decline, failure)',      key:'-', grp:'Plot',       color:'#9f1239', def:42, plot:true, dash:true},
   {id:'mpol',    short:'Policy moral',  label:'Moral: policy type',                    key:'m', grp:'Moral',      color:'#ca8a04', def:45},
@@ -43,18 +38,17 @@ const F = [
   {k:'p3', sec:'Prescreening', label:'Plot recognisable', def:11},
   {k:'xi', sec:'Level of ideology', label:'Xi Jinping quoted', def:14, cat:'xi'},
   {k:'party', sec:'Level of ideology', label:'Party document / institution / event / tifa', def:15, cat:'party'},
-  {k:'west', sec:'Level of ideology', label:'Western document / institution / event', def:16, cat:'west'},
+  {k:'west', sec:'Level of ideology', label:'Western or Western-led document, concept or regulation', def:16, cat:'west'},
+  {k:'critical', sec:'Level of ideology', label:'Western reference framed critically', def:16, dep:'west'},
   {k:'spatial', sec:'Setting', label:'Spatial setting', def:19, cat:'spatial'},
   {k:'temporal', sec:'Setting', label:'Temporal setting', def:20, cat:'temporal'},
   {k:'more4', sec:'Characters', label:'More than four characters', def:37, fromChars:true},
   {k:'nchars', sec:'Characters', label:'Characters with a clear role', def:38, fromChars:true, num:true},
-  {k:'t1', sec:'Plot', label:'Plot 1: technology part of plot', def:41, cat:'tech', plot:1},
-  {k:'pt1', sec:'Plot', label:'Plot 1: plot type', def:42, ptype:1},
-  {k:'pl2', sec:'Plot', label:'Parallel plot 2 exists', def:40},
-  {k:'t2', sec:'Plot', label:'Plot 2: technology part of plot', def:41, cat:'tech', plot:2, dep:'pl2'},
-  {k:'pt2', sec:'Plot', label:'Plot 2: plot type', def:42, ptype:2, dep:'pl2'},
-  {k:'mpol', sec:'Moral of the story', label:'Policy-type moral', def:45, cat:'mpol'},
-  {k:'mideo', sec:'Moral of the story', label:'Ideological-type moral', def:46, cat:'mideo'}
+  {k:'pt1', sec:'Plot', label:'Plot type (first narrative)', def:42, ptype:1, dep:'p3'},
+  {k:'moral', sec:'Moral of the story', label:'Moral present', def:44},
+  {k:'mpol', sec:'Moral of the story', label:'Policy-type moral', def:45, cat:'mpol', dep:'moral'},
+  {k:'mideo', sec:'Moral of the story', label:'Ideological-type moral', def:46, cat:'mideo', dep:'moral'},
+  {k:'technology', sec:'Technology reference', label:'Specific technology framed as an energy-transition solution', cat:'solution', def:41}
 ];
 const FM = Object.fromEntries(F.map(f => [f.k, f]));
 const SEC_DEF = {'Prescreening':8, 'Level of ideology':13, 'Setting':18, 'Characters':22, 'Plot':40, 'Moral of the story':44};
@@ -62,11 +56,11 @@ const OPT = {
   bin:[[1,'Yes'],[0,'No']],
   plot:[[1,'Positive'],[2,'Negative'],[3,'Mixed']],
   level:[[1,'State'],[2,'Domain'],[3,'Citizen']],
-  role:[[1,'Hero'],[2,'Villain'],[3,'Victim'],[4,'Beneficiary']]
+  role:[[1,'Hero'],[2,'Villain'],[3,'Victim'],[4,'Beneficiary'],[5,'Unclear']]
 };
 const lab = (kind, v) => { const o = (OPT[kind] || []).find(x => x[0] === v); return o ? o[1] : (v === '' || v == null ? '–' : String(v)); };
 const fieldKind = f => f.ptype ? 'plot' : f.num ? 'num' : 'bin';
-const ROLE_COL = {1:'#16a34a', 2:'#dc2626', 3:'#ca8a04', 4:'#0284c7'};
+const ROLE_COL = {1:'#16a34a', 2:'#dc2626', 3:'#ca8a04', 4:'#0284c7', 5:'#64748b'};
 
 /* ================= practice material (fictional) ================= */
 const PRACTICE = [
@@ -93,7 +87,7 @@ const EXAMPLE_CODINGS = {
       ['west','A report published in Brussels by a European research network'],
       ['char',"Shanxi's provincial government",'c1'],['action','has opened a two-gigawatt solar and storage base','c1'],
       ['char','Local residents','c2'],['action','have been retrained as maintenance technicians','c2'],
-      ['char','Jinyuan Energy','c3'],['tech','battery storage stations',null,1],
+      ['char','Jinyuan Energy','c3'],['solution','battery storage stations',null,1],
       ['pos','allow the grid to absorb more solar power',null,1],['neg','could lock in emissions for decades',null,1],
       ['mpol','China must accelerate market reforms so that storage operators are paid fairly'],['mideo','is the only way forward']],
     chars:[{id:'c1',name:"Shanxi's provincial government",en:'Shanxi provincial government',prc:1,level:1,role:1},
@@ -107,7 +101,7 @@ const EXAMPLE_CODINGS = {
       ['char',"Shanxi's provincial government",'c1'],['action','has opened a two-gigawatt solar and storage base','c1'],
       ['char','Local residents','c2'],['action','lost their jobs','c2'],
       ['char','Jinyuan Energy','c3'],['action','retrained','c3'],
-      ['tech','battery storage stations',null,1],['pos','allow the grid to absorb more solar power',null,1],
+      ['solution','battery storage stations',null,1],['pos','allow the grid to absorb more solar power',null,1],
       ['mpol','China must accelerate market reforms']],
     chars:[{id:'c1',name:"Shanxi's provincial government",en:'Shanxi provincial government',prc:1,level:1,role:1},
            {id:'c2',name:'Local residents',en:'Local residents',prc:1,level:3,role:3},
@@ -155,7 +149,7 @@ function buildExample(key, ex) {
     const tag = cat + phrase; if (used[tag] != null) s = text.indexOf(phrase, used[tag] + 1); used[tag] = s;
     return {id:rid(), cat, s, e:s + phrase.length, t:phrase, ...(c ? {c} : {}), ...(CM[cat].plot ? {p:p || 1} : {})};
   }).filter(a => a.s >= 0);
-  return {aid:key, anns, chars:clone(ex.chars), codes:clone(ex.codes), summary:ex.summary, memo:'', status:'submitted',
+  return {codebookVersion:'2.3',aid:key, anns, chars:clone(ex.chars), codes:clone(ex.codes), summary:ex.summary, memo:'', status:'submitted',
           submittedAt:'2026-01-01T09:00:00Z', firstSubmittedAt:'2026-01-01T09:00:00Z', revisions:0, example:true};
 }
 const EXAMPLE_SUBS = {exA: buildExample('practice-en', EXAMPLE_CODINGS.exA), exB: buildExample('practice-en', EXAMPLE_CODINGS.exB)};
@@ -176,11 +170,11 @@ function persistLocal() {
 const isPractice = key => !!(S.practiceArt[key]);
 function art(key) { return S.practiceArt[key] || S.articles[key]; }
 function corpus() {
-  return Object.values(S.articles).filter(a => !a.archived).sort((a, b) => (a.order ?? 1e9) - (b.order ?? 1e9) || String(a.id).localeCompare(String(b.id), undefined, {numeric:true}));
+  return Object.values(S.articles).filter(a => !a.archived && !overLength(a)).sort((a, b) => (a.order ?? 1e9) - (b.order ?? 1e9) || String(a.id).localeCompare(String(b.id), undefined, {numeric:true}));
 }
 function draft(key, create = true) {
   const store = isPractice(key) ? S.practiceDrafts : S.drafts;
-  if (!store[key] && create) store[key] = {aid:key, anns:[], chars:[], codes:{}, summary:'', memo:'', status:'draft', updatedAt:now()};
+  if (!store[key] && create) store[key] = {codebookVersion:'2.3',aid:key, anns:[], chars:[], codes:{}, summary:'', memo:'', status:'draft', updatedAt:now()};
   return store[key];
 }
 function subsOf(key) {
@@ -227,6 +221,7 @@ function cv(c, ch, k) { const v = ch[k]; if (v !== undefined && v !== null && v 
 const validChars = c => (c.chars || []).filter(ch => cv(c, ch, 'valid') === 1);
 function auto(c, k) {
   const f = FM[k], anns = c.anns || [];
+  if (k === 'moral') return {v:['mpol','mideo'].some(key => c.codes?.[key] === 1 || anns.some(a => a.cat === key)) ? 1 : 0, why:'Based on moral passages'};
   if (f.cat) { const n = anns.filter(a => a.cat === f.cat && (!f.plot || (a.p || 1) === f.plot)).length; return {v:n ? 1 : 0, n, why:n ? n + ' marked in text' : 'nothing marked yet'}; }
   if (f.ptype) {
     const pos = anns.filter(a => a.cat === 'pos' && (a.p || 1) === f.ptype).length, neg = anns.filter(a => a.cat === 'neg' && (a.p || 1) === f.ptype).length;
@@ -235,8 +230,7 @@ function auto(c, k) {
     if (pos && neg) return {v:'', why:pos + ' positive · ' + neg + ' negative: weigh them and choose'};
     return {v:'', why:'mark positive / negative turns, or choose'};
   }
-  if (k === 'pl2') { const n = anns.filter(a => a.p === 2).length; return {v:n ? 1 : 0, n, why:n ? n + ' passages tagged plot 2' : 'no passage tagged plot 2'}; }
-  if (k === 'nchars') { const n = validChars(c).filter(ch => cv(c, ch, 'role') !== '').length; return {v:n, why:'counted from the character cards'}; }
+  if (k === 'nchars') { const n = validChars(c).filter(ch => [1,2,3,4].includes(cv(c, ch, 'role'))).length; return {v:n, why:'counted from the character cards'}; }
   if (k === 'more4') { const n = validChars(c).length; return {v:n > 4 ? 1 : 0, why:n + ' valid character' + (n === 1 ? '' : 's')}; }
   return {v:'', why:''};
 }
@@ -244,55 +238,59 @@ function auto(c, k) {
 const PRE = ['p1','p2','p3'];
 const pv = (c, k) => { const v = c && c.codes ? c.codes[k] : undefined; return v === 0 || v === 1 ? v : ''; };
 const screenedOut = c => !!c && (pv(c, 'p1') === 0 || (pv(c, 'p2') === 0 && pv(c, 'p3') === 0));
-const preDone = c => screenedOut(c) || PRE.every(k => pv(c, k) !== '');
+const preDone = c => PRE.every(k => pv(c, k) !== '');
 const outReason = c => pv(c, 'p1') === 0 ? 'the text is not topically relevant' : 'the text has neither characters nor a plot';
 function val(c, k) {
   if (!c) return '';
   const f = FM[k];
-  if (!PRE.includes(k) && screenedOut(c)) return '';
-  if (f.dep && val(c, f.dep) !== 1) return '';
+  if (!f) return '';
+  if (!PRE.includes(k) && (screenedOut(c) || (f.sec === 'Characters' && pv(c,'p2') === 0))) return -1;
+  if (f.dep && val(c, f.dep) !== 1) return -1;
   const o = c.codes && c.codes[k];
   if (o !== undefined && o !== null && o !== '') return o;
+  if (k === 'technology' && c.codebookVersion !== '2.3' && (c.status === 'submitted' || !c.status)) return '';
   return auto(c, k).v;
 }
 function openItems(c) {
   const out = [];
-  if (screenedOut(c)) return out;
+
   for (const k of ['p1','p2','p3']) if (val(c, k) === '') out.push({k, label:FM[k].label});
-  if (!preDone(c)) return out;
-  if (val(c, 'pt1') === '') out.push({k:'pt1', label:'Plot 1 type'});
-  if (val(c, 'pl2') === 1 && val(c, 'pt2') === '') out.push({k:'pt2', label:'Plot 2 type'});
-  (c.chars || []).forEach((ch, i) => {
+  if (!preDone(c) || screenedOut(c)) return out;
+  if (val(c,'critical') === '') out.push({k:'critical', label:FM.critical.label});
+  if (val(c, 'pt1') === '') out.push({k:'pt1', label:'Plot type'});
+  if (pv(c,'p2') === 1) (c.chars || []).forEach((ch, i) => {
     const v = cv(c, ch, 'valid');
+    if (v === 1 && !String(ch.en || '').trim()) out.push({k:'ch:' + ch.id, label:'English name or Pinyin'});
     if (v === '') out.push({k:'ch:' + ch.id, label:'Character ' + (i + 1) + ' validity'});
     else if (v === 1) for (const kk of ['prc','level','role']) if (cv(c, ch, kk) === '') { out.push({k:'ch:' + ch.id, label:'Character ' + (i + 1) + ' ' + (kk === 'prc' ? 'PRC-Chinese' : kk)}); }
   });
+  if (pv(c,'p2') === 1 && !validChars(c).length) out.push({k:'p2', label:'At least one valid character'});
+  if (val(c,'moral') === 1 && !['mpol','mideo'].some(k => val(c,k) === 1)) out.push({k:'moral', label:'At least one moral type'});
   if (!String(c.summary || '').trim()) out.push({k:'summary', label:'Narrative summary'});
   return out;
 }
 function progress(c) {
-  if (screenedOut(c)) return 1;
-  const total = 4 + (val(c, 'pl2') === 1 ? 1 : 0) + 1 + (c.chars || []).reduce((n, ch) => n + (cv(c, ch, 'valid') === 0 ? 1 : 4), 0);
+  if (screenedOut(c)) return PRE.filter(k => pv(c,k) !== '').length / 3;
+  const total = 5 + (c.chars || []).reduce((n, ch) => n + (cv(c, ch, 'valid') === 0 ? 1 : 4), 0);
   return Math.max(0, Math.min(1, 1 - openItems(c).length / total));
 }
 
-/* ================= Results-sheet row (43 columns, exact template order) ================= */
-function resultsRow(a, c, coderCol) {
-  const r = new Array(43).fill('');
-  r[0] = a.id; r[1] = coderCol; r[2] = a.dataset; r[3] = a.url || '';
-  ['p1','p2','p3','xi','party','west','spatial','temporal'].forEach((k, i) => r[4 + i] = val(c, k));
-  const chs = c.chars || [];
-  const put = (i, base, withAction) => {
-    const ch = chs[i]; if (!ch) return;
-    const v = cv(c, ch, 'valid'); r[base] = ch.en || ch.name; r[base + 1] = v; let o = base + 2;
-    if (withAction) { r[o] = cv(c, ch, 'action'); o++; }
-    if (v === 1) { r[o] = cv(c, ch, 'prc'); r[o + 1] = cv(c, ch, 'level'); r[o + 2] = cv(c, ch, 'role'); }
-  };
-  if (!screenedOut(c)) { put(0, 12, true); put(1, 18); put(2, 23); put(3, 28); }
-  r[33] = val(c, 'more4'); r[34] = val(c, 'nchars'); r[35] = val(c, 't1'); r[36] = val(c, 'pt1');
-  r[37] = val(c, 'pl2'); r[38] = val(c, 't2'); r[39] = val(c, 'pt2'); r[40] = val(c, 'mpol'); r[41] = val(c, 'mideo');
-  r[42] = screenedOut(c) ? '' : (c.summary || '');
-  return r;
+/* ================= Results-sheet row (codebook 2.3) ================= */
+const charColumns = ['name','valid','action','prc','level','role'];
+const resHeaders = () => ['Article ID','Coder','Dataset','URL','Coding version',...F.map(f => f.label),
+  ...Array.from({length:4}, (_,i) => charColumns.map(k => 'Char ' + (i+1) + ' ' + k)).flat(), 'Narrative summary'];
+const resLegend = () => resHeaders().map(() => '');
+function resultValues(a, coder, values, chars, summary, version) {
+  const row = [a.id, coder, a.dataset, a.url || '', version, ...F.map(f => values[f.k])];
+  const skip = screenedOut({codes:values}) || values.p2 === 0;
+  for (let i=0; i<4; i++) for (const k of charColumns) row.push(skip ? -1 : chars[i]?.[k] ?? '');
+  return [...row, screenedOut({codes:values}) ? -1 : summary];
+}
+function resultsRow(a,c,coder) {
+  const values = Object.fromEntries(F.map(f => [f.k,val(c,f.k)]));
+  const chars = (c.chars || []).map(ch => Object.fromEntries(charColumns.map(k =>
+    [k, k === 'name' ? ch.en || ch.name : cv(c,ch,k)])));
+  return resultValues(a,coder,values,chars,c.summary || '',c.codebookVersion || 'Earlier');
 }
 
 /* ================= intervals / spans ================= */
@@ -310,7 +308,7 @@ const normName = s => String(s || '').toLowerCase().replace(/^the\s+/, '').repla
 function alignChars(codings) {
   // codings: [{uid, c}] → groups [{members:{uid:{ch,c}}, label}]
   const nodes = [];
-  codings.forEach(({uid, c}) => (c.chars || []).forEach(ch => nodes.push({uid, c, ch,
+  codings.filter(({c}) => !screenedOut(c) && pv(c,'p2') === 1).forEach(({uid, c}) => (c.chars || []).forEach(ch => nodes.push({uid, c, ch,
     names:new Set([normName(ch.name), normName(ch.en)].filter(Boolean)),
     iv:mergeIv((c.anns || []).filter(a => a.cat === 'char' && a.c === ch.id).map(a => [a.s, a.e]))})));
   const par = nodes.map((_, i) => i), uids = nodes.map(n => new Set([n.uid]));
@@ -340,7 +338,7 @@ function mode(arr) {
   return arr.length ? best : '';
 }
 function majority(vals) {
-  const vs = vals.filter(v => v !== '' && v != null); if (!vs.length) return {v:'', src:'none'};
+  const vs = vals.filter(v => v !== '' && v !== -1 && v != null); if (!vs.length) return {v:'', src:'none'};
   const m = new Map(); vs.forEach(v => m.set(v, (m.get(v) || 0) + 1));
   const sorted = [...m].sort((a, b) => b[1] - a[1]);
   if (sorted.length === 1) return {v:sorted[0][0], src:vs.length > 1 ? 'unanimous' : 'single'};
@@ -351,7 +349,7 @@ function majority(vals) {
 /* ================= Krippendorff's alpha ================= */
 function prepUnits(units, metric) {
   return units.map(vals => {
-    const v = vals.filter(x => x !== '' && x != null); const m = v.length; if (m < 2) return null;
+    const v = vals.filter(x => x !== '' && x !== -1 && x != null); const m = v.length; if (m < 2) return null;
     if (metric === 'interval') { const nums = v.map(Number); const s1 = nums.reduce((a, b) => a + b, 0), s2 = nums.reduce((a, b) => a + b * b, 0); return {m, d:2 * (m * s2 - s1 * s1) / (m - 1), s1, s2, agree:pairAgree(v)}; }
     const cnt = {}; v.forEach(x => cnt[x] = (cnt[x] || 0) + 1); const sq = Object.values(cnt).reduce((a, b) => a + b * b, 0);
     return {m, d:(m * m - sq) / (m - 1), cnt, agree:pairAgree(v)};
@@ -398,10 +396,10 @@ function consensus(key, basis = 'current') {
     if (fv !== undefined && fv !== null && fv !== '') { values[f.k] = fv; src[f.k] = 'resolved'; continue; }
     const m = majority(subs.map(x => val(x.c, f.k))); values[f.k] = m.v; src[f.k] = m.src;
   }
-  if (values.pl2 !== 1) { values.t2 = ''; values.pt2 = ''; }
   const out = screenedOut({codes:values});
-  if (out) F.forEach(f => { if (!PRE.includes(f.k)) { values[f.k] = ''; src[f.k] = 'screened out'; } });
-  const groups = out ? [] : alignChars(subs).filter(g => Object.keys(g.members).length > k / 2);
+  if (out) F.forEach(f => { if (!PRE.includes(f.k)) { values[f.k] = -1; src[f.k] = 'screened out'; } });
+  for (const f of F) if ((f.dep && values[f.dep] !== 1) || (f.sec === 'Characters' && values.p2 === 0)) values[f.k] = -1;
+  const groups = out || values.p2 === 0 ? [] : alignChars(subs).filter(g => Object.keys(g.members).length > k / 2);
   const chars = groups.map(g => {
     const mem = Object.values(g.members);
     const valid = majority(mem.map(m => cv(m.c, m.ch, 'valid'))).v;
@@ -411,16 +409,10 @@ function consensus(key, basis = 'current') {
       role:majority(mem.map(m => cv(m.c, m.ch, 'role'))).v,
       action:cv(mem[0].c, mem[0].ch, 'action')};
   }).filter(ch => ch.valid === 1);
-  return {k, values, src, chars, summary:out ? '' : (fin.summary || ''), out};
+  return {k, values, src, chars, version:[...new Set(subs.map(x => x.c.codebookVersion || 'Earlier'))].join(' / '), summary:out ? '' : (fin.summary || ''), out};
 }
 function consensusRow(a, cs) {
-  const r = new Array(43).fill('');
-  r[0] = a.id; r[1] = 'consensus'; r[2] = a.dataset; r[3] = a.url || '';
-  ['p1','p2','p3','xi','party','west','spatial','temporal'].forEach((k, i) => r[4 + i] = cs.values[k]);
-  const put = (i, base, withAction) => { const ch = cs.chars[i]; if (!ch) return; r[base] = ch.label; r[base + 1] = 1; let o = base + 2; if (withAction) { r[o] = ch.action; o++; } r[o] = ch.prc; r[o + 1] = ch.level; r[o + 2] = ch.role; };
-  put(0, 12, true); put(1, 18); put(2, 23); put(3, 28);
-  ['more4','nchars','t1','pt1','pl2','t2','pt2','mpol','mideo'].forEach((k, i) => r[33 + i] = cs.values[k]);
-  r[42] = cs.summary; return r;
+  return resultValues(a,'consensus',cs.values,cs.chars.map(ch => ({...ch,name:ch.label})),cs.summary,cs.version);
 }
 
 /* ================= rendering: top bar ================= */
@@ -527,6 +519,7 @@ function renderReader() {
   const el = $('#reader'); if (!el) return;
   const a = art(S.cur);
   if (!a) { el.innerHTML = `<div class="empty"><b>Pick an article on the left</b>Start with a practice text to try the tool.</div>`; return; }
+  if (overLength(a)) { el.innerHTML = '<div class="empty"><b>Excluded by article length</b></div>'; return; }
   const c = draft(a.key); const lk = locked(a.key);
   const counts = {}; c.anns.forEach(x => counts[x.cat] = (counts[x.cat] || 0) + 1);
   const others = Object.keys(subsOf(a.key)).filter(u => u !== S.uid).length;
@@ -540,7 +533,6 @@ function renderReader() {
     <div class="rd-bar">
       ${S.mode === 'shared' && !a.practice ? (() => { const ts = threadsFor(a.key), op = ts.filter(t => t.status === 'open').length, un = ts.filter(isUnread).length; return `<button class="btn sm" data-act="discuss" title="Questions and discussion with the other coders of this article">Discuss${op ? ` <span class="badge soft">${op}</span>` : ''}${un ? ' <span class="badge">new</span>' : ''}</button>`; })() : ''}
       <span class="savest"></span>
-      <span style="display:flex;align-items:center;gap:6px" title="Technology and positive/negative turns are tagged to this plot">Plot passages go to <span class="mini-seg"><button data-act="plot" data-v="1" class="${S.plot === 1 ? 'on' : ''}">1</button><button data-act="plot" data-v="2" class="${S.plot === 2 ? 'on' : ''}">2</button></span></span>
       <span class="legend">${CATS.filter(x => counts[x.id]).map(x => `<button class="lg ${S.hidden[x.id] ? 'off' : ''}" style="--c:${x.color}" data-act="lg" data-cat="${x.id}" title="Show or hide"><i></i>${x.short}<b>${counts[x.id]}</b></button>`).join('') || '<span>Nothing marked yet</span>'}</span>
     </div>
     <div id="txt" class="txt ${screenedOut(c) ? 'out' : ''}" lang="${a.dataset === '1' ? 'zh' : 'en'}">${textHTML(a.text, c.anns.filter(x => !S.hidden[x.cat]), c, S.mode === 'shared' && !a.practice ? threadsFor(a.key).filter(t => t.status === 'open') : [])}</div>
@@ -556,8 +548,8 @@ function metaLine(a) {
 function preTop(c, lk) {
   const done = preDone(c), out = screenedOut(c);
   const ans = k => pv(c, k) === 1 ? 'yes' : pv(c, k) === 0 ? 'no' : '–';
-  if (out) return `<div class="ps-line warn"><span class="step">1</span><span><b>Screened out:</b> ${outReason(c)}. No further coding needed.</span><button class="link" data-act="psgo">See the answers</button></div>`;
-  if (done && !S.psEdit) return `<div class="ps-line"><span class="step ok">1</span><span><b>Prescreening done:</b> relevant ${ans('p1')} · characters ${ans('p2')} · plot ${ans('p3')}. <span style="color:var(--muted)">Now mark the text.</span></span>${lk ? '' : '<button class="link" data-act="psedit">Change</button>'}</div>`;
+  if (done && out) return `<div class="ps-line warn"><span class="step">1</span><span><b>Screened out:</b> ${outReason(c)}. No further coding needed.</span><button class="link" data-act="psgo">See the answers</button></div>`;
+  if (done && !S.psEdit) return `<div class="ps-line"><span class="step ok">1</span><span><b>Prescreening done:</b> relevant ${ans('p1')} · characters ${ans('p2')} · plot ${ans('p3')}. <span style="color:var(--muted)">Reread from the beginning and code the first narrative.</span></span>${lk ? '' : '<button class="link" data-act="psedit">Change</button>'}</div>`;
   if (done) return '';
   return `<div class="ps-line todo"><span class="step">1</span><span><b>Step 1: read the whole text.</b> Then answer the three prescreening questions at the end of the text. Marking opens after that.</span><button class="link" data-act="psgo">Go to the questions ↓</button></div>`;
 }
@@ -567,7 +559,7 @@ function preBottom(c, lk) {
   return `<section class="prescreen ${out ? 'out' : ''}" id="prescreen" aria-label="Step 1: Prescreening">
     <div class="ps-h"><span class="step">1</span><div><b>Prescreening</b><p>${out ? 'Your answers screen this text out.' : 'You have read the text. Is it eligible for coding?'}</p></div><button class="q" data-act="def" data-def="8" aria-label="About the prescreening">?</button></div>
     ${PRE.map(k => fieldHTML(c, FM[k], lk)).join('')}
-    ${out ? `<div class="ps-out"><b>No further coding needed:</b> ${outReason(c)}. Your answers are enough for this article.${lk ? '' : ` <span class="ps-act"><button class="btn sm pri" data-act="submit">Submit prescreening</button></span>`}</div>`
+    ${done && out ? `<div class="ps-out"><b>No further coding needed:</b> ${outReason(c)}. Your answers are enough for this article.${lk ? '' : ` <span class="ps-act"><button class="btn sm pri" data-act="submit">Submit prescreening</button></span>`}</div>`
       : done ? `<div class="ps-ok"><b>The text passes.</b> Continue with the full coding. <button class="btn sm pri" data-act="psclose">Start marking</button></div>` : ''}
   </section>`;
 }
@@ -628,24 +620,31 @@ function charHTML(c, ch, i, lk) {
     <div class="ch-row"><span>Role <button class="q" data-act="def" data-def="31">?</button></span>${segHTML('role', cv(c, ch, 'role'), false, `data-act="chset" data-id="${ch.id}" data-k="role"`, dis)}</div>
   </div>`;
 }
+function overLength(a) {
+  if (!a?.text) return false;
+  if (String(a.dataset) === '1') return Array.from(a.text.replace(/\s/g,'')).length > 1000;
+  return (a.text.match(/\S+/g) || []).length > 2000;
+}
 function renderPanel() {
   const el = $('#panel'); if (!el) return;
   const a = art(S.cur); if (!a) { el.innerHTML = ''; return; }
+  if (overLength(a)) { el.innerHTML = '<div class="sec"><b>Excluded by article length</b><p>The limit is 1,000 characters for Chinese texts and 2,000 words for other texts.</p></div>'; return; }
   const c = draft(a.key), lk = locked(a.key), st = el.scrollTop;
   const p = progress(c), open = openItems(c);
   const secs = [...new Set(F.map(f => f.sec))];
   const pre = preDone(c), out = screenedOut(c);
   const body = secs.map(sec => {
     if (sec !== 'Prescreening' && (out || !pre)) return '';
+    if ((sec === 'Characters' && pv(c,'p2') === 0) || (sec === 'Plot' && pv(c,'p3') === 0)) return '';
     const fs = F.filter(f => f.sec === sec);
     let inner = fs.filter(f => !f.fromChars).map(f => fieldHTML(c, f, lk)).join('');
     if (sec === 'Characters') {
-      inner = `<p style="margin:0 0 4px;font-size:12px;color:var(--faint)">Select a name in the text and press <b>C</b>; select what it does and press <b>A</b>. Order sets Char 1–4 in the export.</p>`
+      inner = `<p style="margin:0 0 4px;font-size:12px;color:var(--faint)">Select a name in the text and press <b>C</b>; select what it does and press <b>A</b>. Check the suggested English name or Pinyin and edit it as needed. Use order of first appearance for Char 1–4 in the export.</p>`
         + c.chars.map((ch, i) => charHTML(c, ch, i, lk)).join('')
         + (lk ? '' : `<button class="btn sm" data-act="chadd">+ Add character without text mark</button>`)
         + fs.map(f => fieldHTML(c, f, lk)).join('');
     }
-    return `<div class="sec"><div class="sec-h">${esc(sec)}<button class="q" data-act="def" data-def="${SEC_DEF[sec]}" aria-label="Definition">?</button></div>${inner}</div>`;
+    return `<div class="sec"><div class="sec-h">${esc(sec)}<button class="q" data-act="def" data-def="${SEC_DEF[sec] ?? 41}" aria-label="Definition">?</button></div>${inner}</div>`;
   }).join('');
   const gate = out ? `<div class="sec"><div class="ps-out" style="margin:4px 0 0"><b>Screened out:</b> ${outReason(c)}. Nothing else to code for this article.</div></div>`
     : !pre ? `<div class="sec"><p class="small" style="margin:4px 0 0">Read the whole text first, then answer the prescreening (here or at the end of the text). The rest of the coding sheet opens after that.</p></div>` : '';
@@ -668,16 +667,18 @@ function renderPanel() {
 function draftSummary(c) {
   const T = cat => [...new Set(c.anns.filter(a => a.cat === cat).map(a => a.t.trim()))];
   const and = arr => arr.length <= 1 ? (arr[0] || '') : arr.slice(0, -1).join(', ') + ' and ' + arr[arr.length - 1];
-  const vc = validChars(c); const by = r => vc.filter(ch => cv(c, ch, 'role') === r);
+  const vc = pv(c,'p2') === 1 ? validChars(c).slice(0,4) : []; const by = r => vc.filter(ch => cv(c, ch, 'role') === r);
   const nm = ch => ch.en || ch.name;
   const actOf = ch => (cv(c, ch, 'action').split('; ')[0] || '[action]');
-  let s = `Set in ${and(T('spatial')) || '[place]'} and ${and(T('temporal')) || '[time]'}, this is a story about how ${by(1).length ? by(1).map(ch => nm(ch) + ' ' + actOf(ch)).join(' and ') : '[hero] [action]'}`;
+  const setting = and([...T('spatial'), ...T('temporal')]);
+  let s = `${setting ? 'Set in ' + setting + ', this' : 'This'} is a story about how ${by(1).length ? by(1).map(ch => nm(ch) + ' ' + actOf(ch)).join(' and ') : '[describe the change]'}`;
   if (by(4).length) s += ` and ${by(4).map(ch => nm(ch) + ' ' + actOf(ch)).join(' and ')}`;
   s += '.';
   if (by(2).length) s += ` The ${by(2).map(ch => nm(ch) + ' ' + actOf(ch)).join(' and ')}${by(3).length ? ' and causes harm to ' + by(3).map(nm).join(' and ') : ''}.`;
   else if (by(3).length) s += ` ${by(3).map(ch => nm(ch) + ' ' + actOf(ch)).join(' and ')}.`;
   const morals = [...T('mpol'), ...T('mideo')];
-  s += ` The take-away message is ${and(morals) || '[moral]'}.`;
+  if (by(5).length) s += ' ' + by(5).map(ch => nm(ch) + ' ' + actOf(ch)).join(' and ') + '.';
+  s += val(c,'moral') === 1 ? ` The take-away message is ${and(morals) || '[moral]'}.` : ' The take-away message is not identified.';
   return s;
 }
 
@@ -688,7 +689,7 @@ function checkSel() {
   const sel = getSelection(); const box = $('#txt');
   if (!box || !sel.rangeCount || sel.isCollapsed) return;
   const r = sel.getRangeAt(0); if (!box.contains(r.startContainer) || !box.contains(r.endContainer)) return;
-  const a = art(S.cur); const text = a.text;
+  const a = art(S.cur); if (overLength(a)) return; const text = a.text;
   let s = offsetIn(box, r.startContainer, r.startOffset), e = offsetIn(box, r.endContainer, r.endOffset);
   if (e < s) [s, e] = [e, s];
   while (s < e && /\s/.test(text[s])) s++; while (e > s && /\s/.test(text[e - 1])) e--;
@@ -705,11 +706,12 @@ function checkSel() {
 }
 function showTagMenu(rect) {
   S.menu = {type:'tag', rect};
-  const groups = [...new Set(CATS.map(c => c.grp))];
+  const choices = CATS.filter(c => categoryAllowed(c, draft(S.cur)));
+  const groups = [...new Set(choices.map(c => c.grp))];
   const pop = $('#pop');
   pop.innerHTML = `<div class="pop-sel">“${esc(S.sel.t.length > 120 ? S.sel.t.slice(0, 120) + '…' : S.sel.t)}”</div>` + groups.map(g => `
-    <div class="pop-g"><span>${g}</span>${g === 'Plot' ? `<span class="mini-seg">plot <button data-act="plot" data-v="1" class="${S.plot === 1 ? 'on' : ''}">1</button><button data-act="plot" data-v="2" class="${S.plot === 2 ? 'on' : ''}">2</button></span>` : ''}</div>
-    <div class="pop-gi">${CATS.filter(c => c.grp === g).map(c => `<button class="pop-i" data-act="tag" data-cat="${c.id}"><span class="dot" style="--c:${c.color}"></span>${c.label}<kbd>${c.key.toUpperCase()}</kbd></button>`).join('')}</div>`).join('');
+    <div class="pop-g"><span>${g}</span></div>
+    <div class="pop-gi">${choices.filter(c => c.grp === g).map(c => `<button class="pop-i" data-act="tag" data-cat="${c.id}"><span class="dot" style="--c:${c.color}"></span>${c.label}<kbd>${c.key.toUpperCase()}</kbd></button>`).join('')}</div>`).join('');
   if (S.mode === 'shared' && !isPractice(S.cur)) pop.insertAdjacentHTML('beforeend', `<div class="pop-g"><span>Discuss</span></div><div class="pop-gi"><button class="pop-i" data-act="flagsel"><span class="dot" style="--c:#b45309"></span>Flag for discussion<kbd>F</kbd></button></div>`);
   placePop(rect);
 }
@@ -741,19 +743,30 @@ function addAnn(cat, chId) {
   const c = draft(S.cur); pushUndo();
   const a = {id:rid(), cat, s:S.sel.s, e:S.sel.e, t:S.sel.t};
   if (chId) a.c = chId;
-  if (CM[cat].plot) a.p = S.plot;
+  if (CM[cat].plot) a.p = 1;
   c.anns.push(a); S.sel = null; getSelection().removeAllRanges(); hidePop();
   changed();
 }
 function changed(panelOnly) { queueSave(S.cur); if (!panelOnly) renderReader(); renderPanel(); renderList(); }
+function categoryAllowed(cat, coding) {
+  if (cat.grp === 'Legacy') return false;
+  if (cat.grp === 'Characters') return pv(coding,'p2') === 1;
+  if (cat.grp === 'Plot') return pv(coding,'p3') === 1;
+  return true;
+}
 function chooseCat(cat) {
+  if (!categoryAllowed(CM[cat], draft(S.cur))) return;
   if (!S.sel) return;
   if (cat === 'char' || cat === 'action') return showCharMenu(cat);
   addAnn(cat);
 }
+function suggestName(name) {
+  const institutions = {'国务院':'State Council','国家发展和改革委员会':'National Development and Reform Commission','国家发改委':'National Development and Reform Commission','国家能源局':'National Energy Administration','生态环境部':'Ministry of Ecology and Environment','国家电网':'State Grid','中国政府':'Chinese government','中国':'China','习近平':'Xi Jinping'};
+  return institutions[name] || window.pinyinPro?.pinyin(name, {toneType:'none'}) || '';
+}
 function newChar() {
   const c = draft(S.cur); pushUndo();
-  const ch = {id:'c' + rid(), name:S.sel.t, en:art(S.cur).dataset === '1' ? '' : S.sel.t};
+  const ch = {id:'c' + rid(), name:S.sel.t, en:art(S.cur).dataset === '1' ? suggestName(S.sel.t) : S.sel.t};
   c.chars.push(ch);
   c.anns.push({id:rid(), cat:'char', s:S.sel.s, e:S.sel.e, t:S.sel.t, c:ch.id});
   S.sel = null; getSelection().removeAllRanges(); hidePop(); changed();
@@ -766,7 +779,7 @@ function showAnnPop(el) {
   const chName = id => { const ch = c.chars.find(x => x.id === id); return ch ? (ch.en || ch.name) : ''; };
   $('#pop').innerHTML = anns.map(a => `<div class="ann-i" data-id="${a.id}">
       <span class="dot" style="--c:${CM[a.cat].color}"></span>
-      <span style="font-size:13px"><b>${CM[a.cat].label}</b>${a.c ? ' · ' + esc(chName(a.c)) : ''}${CM[a.cat].plot ? ` · <span class="mini-seg"><button data-act="annp" data-id="${a.id}" data-v="1" class="${(a.p || 1) === 1 ? 'on' : ''}" ${lk ? 'disabled' : ''}>plot 1</button><button data-act="annp" data-id="${a.id}" data-v="2" class="${a.p === 2 ? 'on' : ''}" ${lk ? 'disabled' : ''}>plot 2</button></span>` : ''}<br><span style="color:var(--muted);font-family:var(--read)">“${esc(a.t.slice(0, 90))}${a.t.length > 90 ? '…' : ''}”</span></span>
+      <span style="font-size:13px"><b>${CM[a.cat].label}</b>${a.c ? ' · ' + esc(chName(a.c)) : ''}<br><span style="color:var(--muted);font-family:var(--read)">“${esc(a.t.slice(0, 90))}${a.t.length > 90 ? '…' : ''}”</span></span>
       ${lk ? '' : `<button class="ic" data-act="delann" data-id="${a.id}" title="Delete this mark" aria-label="Delete this mark">✕</button>`}
       <input data-annnote="${a.id}" value="${esc(a.note || '')}" placeholder="Add a note to this mark" ${lk ? 'disabled' : ''}>
     </div>`).join('');
@@ -783,13 +796,18 @@ function flash(pred) {
 /* ================= saving ================= */
 async function submit() {
   const key = S.cur, c = draft(key);
+  if (overLength(art(key))) return toast('Excluded by article length.');
+  if (!preDone(c)) return toast('Answer all three screening questions.');
+  const pending = openItems(c);
+  if (pending.length) return toast('Complete ' + pending[0].label + ' before submitting.');
   if (!S.coder && !isPractice(key)) { if (S.mode === 'shared') { toast(S.isAdmin ? 'Give yourself a coder number under Team first.' : 'You need a coder number before submitting. Ask the project lead to set it under Team.', 5000); return; } openCoder(true); return; }
   if (isPractice(key)) LS.set('npf:practiced', true);
   const prev = mySub(key);
-  const snap = {anns:clone(c.anns), chars:clone(c.chars), codes:clone(c.codes), summary:c.summary};
+  c.codebookVersion = '2.3';
+  const snap = {codebookVersion:'2.3', anns:clone(c.anns), chars:clone(c.chars), codes:clone(c.codes), summary:c.summary};
   const sub = {aid:key, coder:S.coder, ...clone(c), status:'submitted', submittedAt:now(),
     firstSubmittedAt:(prev && prev.firstSubmittedAt) || now(), revisions:prev ? (prev.revisions || 0) + 1 : 0,
-    first:(prev && prev.first) || snap,
+    first:prev ? (prev.first || {anns:prev.anns, chars:prev.chars, codes:prev.codes, summary:prev.summary, codebookVersion:prev.codebookVersion}) : snap,
     revisedAfterComparison:prev ? !!(prev.revisedAfterComparison || c.sawOthers) : false};
   c.status = 'submitted'; c.submittedAt = sub.submittedAt;
   if (S.mode === 'shared' && !isPractice(key)) { c.updatedAt = now(); LS.set(bkKey(key), c); pendingSave.add(key); }
@@ -818,7 +836,6 @@ function cmpSpec(sel, groups) {
   const f = FM[sel.k]; if (!f) return null;
   if (f.cat) return {cats:[f.cat], plot:f.plot || null, label:f.label};
   if (f.ptype) return {cats:['pos', 'neg', 'tech'], plot:f.ptype, label:f.label};
-  if (f.k === 'pl2') return {cats:['tech', 'pos', 'neg'], plot:2, label:f.label};
   if (f.k === 'p2' || f.fromChars) return {cats:['char', 'action'], label:f.label};
   if (f.k === 'p3') return {cats:['pos', 'neg', 'tech'], label:f.label};
   return {cats:[], label:f.label, none:true};
@@ -950,7 +967,7 @@ function viewCompare(v) {
         <h2 class="cx-title" lang="${zh}">${esc(a.title || a.id)}</h2>
         <div class="cx-now">In the text: <b>${esc(spec ? spec.label : '–')}</b>${T.overlap != null ? ` · coders' marks overlap <b>${pct(T.overlap)}</b>` : ''}</div>
         <div class="cx-leg">${uids.map((u, j) => `<span title="${T.counts[j]} marked passage${T.counts[j] === 1 ? '' : 's'}">${dot(u)}${esc(lbl(u))} <b>${T.counts[j]}</b></span>`).join('')}${uids.length > 1 ? '<span class="cx-key"><i class="cxm some">tinted</i> = not marked by everyone</span>' : ''}</div>
-        <div class="chips cx-cats" aria-label="Show a category">${CATS.filter(c => c.id !== 'note').map(c => `<button class="chip ${sk === 'c:' + c.id ? 'on' : ''}" data-act="cmpsel" data-t="cat" data-k="${c.id}">${c.short}</button>`).join('')}</div>
+        <div class="chips cx-cats" aria-label="Show a category">${CATS.filter(c => c.id !== 'note' && c.grp !== 'Legacy').map(c => `<button class="chip ${sk === 'c:' + c.id ? 'on' : ''}" data-act="cmpsel" data-t="cat" data-k="${c.id}">${c.short}</button>`).join('')}</div>
       </div>
       ${spec && spec.none ? `<div class="banner warn" style="margin:12px 0 0">${esc(spec.label)} is judged from the whole text, so there are no marked passages to compare. Read the text below.</div>` : ''}
       <div class="txt cx-txt" lang="${zh}">${T.html}</div>
@@ -1042,14 +1059,14 @@ function computeRel() {
       roleU.push(vm.map(x => cv(x.c, x.ch, 'role'))); levelU.push(vm.map(x => cv(x.c, x.ch, 'level'))); prcU.push(vm.map(x => cv(x.c, x.ch, 'prc'))); });
   });
   const chars = {jaccard:jn ? jac / jn : null, jn, valid:reliability(validU), role:reliability(roleU), level:reliability(levelU), prc:reliability(prcU)};
-  const spans = CATS.filter(c => c.id !== 'note').map(c => { let s = 0, n = 0; units.forEach(u => { const x = spanAgreement(u.subs.map(z => z.c), c.id); if (x != null) { s += x; n++; } }); return {c, f1:n ? s / n : null, n}; });
+  const spans = CATS.filter(c => c.id !== 'note' && c.grp !== 'Legacy').map(c => { let s = 0, n = 0; units.forEach(u => { const x = spanAgreement(u.subs.map(z => z.c), c.id); if (x != null) { s += x; n++; } }); return {c, f1:n ? s / n : null, n}; });
   // coder pairs
   const byCoder = {};
   units.forEach(u => u.subs.forEach(s => { const cc = coderCodeOf(s.uid) || s.uid; (byCoder[cc] = byCoder[cc] || {})[u.a.key] = s.c; }));
   const coders = Object.keys(byCoder).sort();
   const pair = {};
   coders.forEach(x => coders.forEach(y => { if (x >= y) return; let ag = 0, t = 0, arts2 = 0;
-    for (const k in byCoder[x]) if (byCoder[y][k]) { arts2++; for (const f of F) { const a1 = val(byCoder[x][k], f.k), a2 = val(byCoder[y][k], f.k); if (a1 === '' || a2 === '') continue; t++; if (a1 === a2) ag++; } }
+    for (const k in byCoder[x]) if (byCoder[y][k]) { arts2++; for (const f of F) { const a1 = val(byCoder[x][k], f.k), a2 = val(byCoder[y][k], f.k); if ([a1,a2].some(v => v === '' || v === -1)) continue; t++; if (a1 === a2) ag++; } }
     pair[x + '|' + y] = {p:t ? ag / t : null, n:arts2}; }));
   const nCoders = new Set(units.flatMap(u => u.subs.map(s => coderCodeOf(s.uid) || s.uid))).size;
   const res = {arts, units, early, vars, chars, spans, coders, pair, nCoders,
@@ -1153,7 +1170,7 @@ function anPassages() {
 function anChars() {
   const ds = S.an.ds; const agg = {};
   analysable().forEach(a => { if (ds !== 'all' && a.dataset !== ds) return; const cs = consensus(a.key);
-    cs.chars.forEach(ch => { const k = normName(ch.label); const g = agg[k] = agg[k] || {names:[], arts:new Set(), roles:{1:0, 2:0, 3:0, 4:0}, levels:[], prc:[], ds:new Set()};
+    cs.chars.forEach(ch => { const k = normName(ch.label); const g = agg[k] = agg[k] || {names:[], arts:new Set(), roles:{1:0, 2:0, 3:0, 4:0, 5:0}, levels:[], prc:[], ds:new Set()};
       g.names.push(ch.label); g.arts.add(a.key); g.ds.add(a.dataset); if (ch.role) g.roles[ch.role]++; if (ch.level) g.levels.push(ch.level); if (ch.prc !== '') g.prc.push(ch.prc); }); });
   const rows = Object.values(agg).sort((a, b) => b.arts.size - a.arts.size);
   return `<div class="card"><div class="filters" style="margin-bottom:10px"><select data-act="anf" data-f="ds" aria-label="Dataset"><option value="all">CN + EN</option><option value="1" ${ds === '1' ? 'selected' : ''}>CN</option><option value="2" ${ds === '2' ? 'selected' : ''}>EN</option></select>
@@ -1169,19 +1186,19 @@ function anDist() {
   const arts = analysable(); const css = Object.fromEntries(arts.map(a => [a.key, consensus(a.key)]));
   const groups = [['1','CN'],['2','EN']].filter(([d]) => arts.some(a => a.dataset === d));
   const bins = F.filter(f => !f.ptype && !f.num);
-  const share = (k, d) => { const xs = arts.filter(a => a.dataset === d).map(a => css[a.key].values[k]).filter(v => v !== ''); return {p:xs.length ? xs.filter(v => v === 1).length / xs.length : null, n:xs.length}; };
+  const share = (k, d) => { const xs = arts.filter(a => a.dataset === d).map(a => css[a.key].values[k]).filter(v => v === 0 || v === 1); return {p:xs.length ? xs.filter(v => v === 1).length / xs.length : null, n:xs.length}; };
   const binRows = bins.map(f => `<tr><td>${esc(f.label)}</td>${groups.map(([d]) => { const s = share(f.k, d); return `<td style="min-width:170px"><div style="display:flex;align-items:center;gap:8px"><div class="abar" style="flex:1"><i style="width:${(s.p || 0) * 100}%;background:var(--accent)"></i></div><span class="n" style="font-family:var(--mono);font-size:12px;width:76px;text-align:right">${pct(s.p)} <span style="color:var(--faint)">n=${s.n}</span></span></div></td>`; }).join('')}</tr>`).join('');
   const PCOL = {1:'var(--good)', 2:'var(--bad)', 3:'var(--warn)'};
-  const ptRow = (k, d) => { const xs = arts.filter(a => a.dataset === d).map(a => css[a.key].values[k]).filter(v => v !== ''); const t = xs.length;
+  const ptRow = (k, d) => { const xs = arts.filter(a => a.dataset === d).map(a => css[a.key].values[k]).filter(v => [1,2,3].includes(v)); const t = xs.length;
     return `<td><div class="stack">${t ? [1, 2, 3].map(v => { const c = xs.filter(x => x === v).length; return c ? `<i style="width:${c / t * 100}%;background:${PCOL[v]}" title="${lab('plot', v)} ${c}"></i>` : ''; }).join('') : ''}</div><div style="font-size:11.5px;color:var(--muted);margin-top:2px">${[1, 2, 3].map(v => lab('plot', v) + ' ' + xs.filter(x => x === v).length).join(' · ')}</div></td>`; };
   // PRC × role
-  const cross = d => { const m = {1:{1:0, 2:0, 3:0, 4:0}, 0:{1:0, 2:0, 3:0, 4:0}}; arts.filter(a => d === 'all' || a.dataset === d).forEach(a => css[a.key].chars.forEach(ch => { if ((ch.prc === 1 || ch.prc === 0) && ch.role) m[ch.prc][ch.role]++; })); return m; };
+  const cross = d => { const m = {1:{1:0, 2:0, 3:0, 4:0, 5:0}, 0:{1:0, 2:0, 3:0, 4:0, 5:0}}; arts.filter(a => d === 'all' || a.dataset === d).forEach(a => css[a.key].chars.forEach(ch => { if ((ch.prc === 1 || ch.prc === 0) && ch.role) m[ch.prc][ch.role]++; })); return m; };
   const crossTable = (d, title) => { const m = cross(d); const tot = r => Object.values(m[r]).reduce((a, b) => a + b, 0);
     return `<div><h3 style="font-size:13px;margin:0 0 6px">${title}</h3><div class="tw"><table><thead><tr><th></th>${OPT.role.map(([, l]) => `<th class="n">${l}</th>`).join('')}<th class="n">n</th></tr></thead><tbody>${[[1, 'PRC-Chinese'], [0, 'Not PRC']].map(([r, l]) => `<tr><th>${l}</th>${OPT.role.map(([v]) => { const t = tot(r); const x = m[r][v]; return `<td class="n" style="${t ? `background:color-mix(in srgb,${ROLE_COL[v]} ${Math.round(x / t * 45)}%,transparent)` : ''}">${t ? pct(x / t) : '–'}<div style="font-size:10.5px;color:var(--faint)">${x}</div></td>`; }).join('')}<td class="n">${tot(r)}</td></tr>`).join('')}</tbody></table></div></div>`; };
   return `<div class="card"><h3>How often each element appears</h3><p class="sub">Share of articles coded “Yes” in the consensus.</p>
       <div class="tw"><table><thead><tr><th>Variable</th>${groups.map(([, l]) => `<th>${l}</th>`).join('')}</tr></thead><tbody>${binRows}</tbody></table></div></div>
     <div class="card"><h3>Plot type</h3><div class="keyrow" style="margin-bottom:8px"><span><i style="background:var(--good)"></i>Positive</span><span><i style="background:var(--bad)"></i>Negative</span><span><i style="background:var(--warn)"></i>Mixed</span></div>
-      <div class="tw"><table><thead><tr><th></th>${groups.map(([, l]) => `<th>${l}</th>`).join('')}</tr></thead><tbody><tr><td>Plot 1</td>${groups.map(([d]) => ptRow('pt1', d)).join('')}</tr><tr><td>Plot 2</td>${groups.map(([d]) => ptRow('pt2', d)).join('')}</tr></tbody></table></div></div>
+      <div class="tw"><table><thead><tr><th></th>${groups.map(([, l]) => `<th>${l}</th>`).join('')}</tr></thead><tbody><tr><td>Plot 1</td>${groups.map(([d]) => ptRow('pt1', d)).join('')}</tr></tbody></table></div></div>
     <div class="card"><h3>Who is cast in which role?</h3><p class="sub">Consensus characters: share of each role within PRC-Chinese and non-PRC characters (row percentages).</p>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:18px">${groups.map(([d, l]) => crossTable(d, l)).join('')}</div></div>`;
 }
@@ -1277,14 +1294,14 @@ function closeModal() { $('#modal').hidden = true; $('#modal').innerHTML = ''; }
 function openDef(i) {
   if (!SHOW_CODEBOOK || !CB.defs.length) return;
   const [t, d] = DEF(+i); const rows = [];
-  const idx = +i; if ([26, 31].includes(idx)) for (let j = idx + 1; j < idx + 5 && CB.defs[j] && CB.defs[j][0]; j++) rows.push(CB.defs[j]);
+
   modal(`<div class="mh"><h2>${esc(t)}</h2><button class="x" data-act="close" aria-label="Close">×</button></div><p style="white-space:pre-wrap;font:15px/1.6 var(--read)">${esc(d)}</p>${rows.map(r => `<div class="cb-i"><b>${esc(r[0])}</b><p>${esc(r[1])}</p></div>`).join('')}`);
 }
 function openCodebook() {
   if (!SHOW_CODEBOOK || !CB.defs.length) return;
   let h = '';
-  CB.defs.forEach(([t, d]) => { if (!t) return; const isSec = /^[A-Z ]+$/.test(t.trim()) || /^EBENE LEVELS|PRECODED/.test(t); h += isSec ? `<div class="cb-sec">${esc(t)}</div>${d ? `<p style="color:var(--muted);margin:0 0 6px">${esc(d)}</p>` : ''}` : `<div class="cb-i"><b>${esc(t)}</b>${d ? `<p>${esc(d)}</p>` : ''}</div>`; });
-  modal(`<div class="mh"><div><h2>Codebook</h2><p class="sub">Definitions from the coding table. The same text opens from every “?”.</p></div><button class="x" data-act="close" aria-label="Close">×</button></div>
+  CB.defs.filter((row,i,all) => row[0] && all.findIndex(other => other[0] === row[0]) === i).sort((a,b) => a[0].localeCompare(b[0])).forEach(([t, d]) => { if (!t) return; const isSec = /^[A-Z ]+$/.test(t.trim()) || /^EBENE LEVELS|PRECODED/.test(t); h += isSec ? `<div class="cb-sec">${esc(t)}</div>${d ? `<p style="color:var(--muted);margin:0 0 6px">${esc(d)}</p>` : ''}` : `<div class="cb-i"><b>${esc(t)}</b>${d ? `<p>${esc(d)}</p>` : ''}</div>`; });
+  modal(`<div class="mh"><div><h2>Codebook 2.3</h2><p class="sub">Definitions from the coding table. The same text opens from every “?”.</p></div><button class="x" data-act="close" aria-label="Close">×</button></div>
     <div class="cb-sec">Shortcut keys while text is selected</div><div class="keyrow" style="margin-bottom:8px">${CATS.map(c => `<span><i style="background:${c.color}"></i>${c.key.toUpperCase()} ${c.short}</span>`).join('')}<span>Ctrl/⌘ Z undo</span></div>${h}`, true);
 }
 function openCoder(thenSubmit) {
@@ -1590,7 +1607,7 @@ document.addEventListener('scroll', e => { if (e.target === $('#pop')) return; i
 
 
 /* ================= roles ================= */
-const APP_VERSION = '2026-11-09a';
+const APP_VERSION = '2026-11-19-v2.3';
 const isLead = () => S.mode !== 'shared' || S.isAdmin;
 function allArticles() { return Object.values(S.articles).sort((a, b) => (a.order ?? 1e9) - (b.order ?? 1e9) || String(a.id).localeCompare(String(b.id), undefined, {numeric:true})); }
 function myQueue() { return corpus().filter(a => (assigned(a) || []).includes(String(S.coder))); }
@@ -2236,7 +2253,7 @@ async function enter(session) {
   catch (e) { S.sync = {s:'error', label:'Could not load everything', msg:e.message}; }
   if (!S.isAdmin) { const W = myWork(); const first = W.todo[0] || W.done[0]; if (first) S.cur = first.key; }
   else if (corpus().length && isPractice(S.cur) && LS.get('npf:practiced', false)) S.cur = (nextKey() || S.cur);
-  try { const r = await sb.from('app_config').select('value').eq('key', 'codebook').maybeSingle(); if (r.data && r.data.value) CB = {defs:SHOW_CODEBOOK ? (r.data.value.defs || []) : [], headers:r.data.value.headers || [], legend:r.data.value.legend || []}; } catch {}
+  try { const r = await sb.from('app_config').select('value').eq('key', 'codebook').maybeSingle(); if (r.data?.value?.version === '2.3') CB = {defs:SHOW_CODEBOOK ? (r.data.value.defs || []) : [], headers:r.data.value.headers || [], legend:r.data.value.legend || []}; } catch {}
   document.documentElement.classList.toggle('nocb', !(SHOW_CODEBOOK && CB.defs.length));
   try { await loadThreads(); } catch {}
   try { await loadPeers(); } catch {}
