@@ -460,6 +460,7 @@ function renderTop() {
     <div class="tools">
       <span class="sync ${sy.s === 'saved' ? 'ok' : sy.s === 'saving' ? 'busy' : sy.s === 'error' ? 'err' : ''}" title="${esc(sy.msg)}"><i></i>${esc(sy.label || (S.mode === 'shared' ? 'Shared project' : S.mode === 'loading' ? 'Connecting…' : 'This browser only'))}</span>
       <button class="btn sm" data-act="codebook">Codebook</button>
+      <button class="btn sm" data-act="tutorial">Tutorials · 教程</button>
       ${S.isAdmin ? `<button class="btn sm" data-act="articles">Articles</button>` : ''}
       ${S.isAdmin && S.mode === 'shared' ? `<button class="btn sm" data-act="team">Team</button>` : ''}
       ${S.mode === 'shared' ? `<button class="btn sm" data-act="feedback">Feedback</button>` : ''}
@@ -553,7 +554,7 @@ function renderReader() {
   const others = Object.keys(subsOf(a.key)).filter(u => u !== S.uid).length;
   const peerOpen = !isLead() && !!S.peers[a.key], peerWait = !isLead() && !peerOpen ? cmpWaitText(a.key) : '';
   el.innerHTML = `<div class="rd">
-    <div class="rd-meta"><span class="tag">${esc(a.id)}</span><span>${a.dataset === '1' ? 'Chinese' : 'English'}</span>${a.ebene ? `<span>· Ebene ${esc(a.ebene)}</span>` : ''}${metaLine(a)}${a.url ? `<a href="${esc(a.url)}" target="_blank" rel="noopener">Open source ↗</a>` : ''}${a.practice ?  `<span class="pill na">Practice, not part of the corpus</span><a href="tutorial-${a.dataset === '1' ? 'cn' : 'en'}.html" target="_blank" rel="noopener">${a.dataset === '1' ? '打开中文练习教程' : 'Open English practice tutorial'}</a>` : ''}</div>
+    <div class="rd-meta"><span class="tag">${esc(a.id)}</span><span>${a.dataset === '1' ? 'Chinese' : 'English'}</span>${a.ebene ? `<span>· Ebene ${esc(a.ebene)}</span>` : ''}${metaLine(a)}${a.url ? `<a href="${esc(a.url)}" target="_blank" rel="noopener">Open source ↗</a>` : ''}${a.practice ?  `<span class="pill na">Practice, not part of the corpus</span><button class="btn sm" data-act="tutorial" data-lang="${a.dataset === '1' ? 'cn' : 'en'}">${a.dataset === '1' ? '打开中文练习教程' : 'Open English practice tutorial'}</button>` : ''}</div>
     <h1 lang="${a.dataset === '1' ? 'zh' : 'en'}">${esc(a.title || a.id)}</h1>
     ${lk ? `<div class="banner good"><span>✓ Submitted ${esc(fmtDate(c.submittedAt))}.${others && (isLead() || a.practice) ? ' ' + others + ' other coding' + (others > 1 ? 's' : '') + ' available.' : peerOpen ? ' Everyone has finished this article, so you can now compare.' : ' Thank you!' + (peerWait ? ' ' + peerWait : '')}</span><span style="margin-left:auto;display:flex;gap:8px">${nextKey() ? `<button class="btn sm pri" data-act="next">Next article →</button>` : ''}${(others && (isLead() || a.practice)) || peerOpen ? `<button class="btn sm${nextKey() ? '' : ' pri'}" data-act="gocmp" data-key="${esc(a.key)}">Compare</button>` : ''}${a.practice ? '' : '<button class="btn sm" data-act="view" data-v="inbox">My work</button>'}<button class="btn sm" data-act="reopen">Edit again</button></span></div>` : ''}
     ${preTop(c, lk)}
@@ -1353,6 +1354,33 @@ document.addEventListener('focusin', e => {
 });
 document.addEventListener('scroll',closeHint,true);
 window.addEventListener('resize',closeHint);
+const tutorialDialog = $('#tutorial-dialog');
+function openTutorial(language) {
+  for (const page of tutorialDialog.querySelectorAll('.tutorial-page')) page.hidden = page.dataset.language !== language;
+  for (const button of tutorialDialog.querySelectorAll('nav button')) button.setAttribute('aria-pressed', String(button.dataset.language === language));
+  if (!tutorialDialog.open) tutorialDialog.showModal();
+}
+tutorialDialog.querySelector('nav').addEventListener('click', e => {
+  const button = e.target.closest('button');
+  if (button) openTutorial(button.dataset.language);
+});
+$('#tutorial-close').addEventListener('click', () => tutorialDialog.close());
+tutorialDialog.addEventListener('keydown', e => e.stopPropagation());
+tutorialDialog.addEventListener('change', e => {
+  if (!e.target.matches('input[type="radio"]')) return;
+  const form = e.target.form;
+  form.querySelector('[role="status"]').textContent = '';
+  form.querySelector('.why').hidden = true;
+});
+tutorialDialog.addEventListener('submit', e => {
+  e.preventDefault();
+  const form = e.target, answer = form.querySelector(':checked');
+  const cn = form.closest('.tutorial-page').dataset.language === 'cn';
+  const messages = cn ? ['请先选择一个答案。','答对了。','再试一次。'] : ['Choose an answer first.','Correct.','Try again.'];
+  form.querySelector('[role="status"]').textContent = messages[!answer ? 0 : answer.value === form.dataset.key ? 1 : 2];
+  form.querySelector('.why').hidden = !answer;
+});
+
 function openCodebook(part, hint) {
   const chapters = bookChapters.map(([title,body],i) =>
     `<details ${part === i+1 ? 'open' : ''}><summary>${esc(title)}</summary><p style="white-space:pre-wrap">${esc(body)}</p></details>`).join('');
@@ -1594,6 +1622,7 @@ document.addEventListener('click', async e => {
     case 'copymethods': copyText($('#methods').textContent, 'Methods paragraph copied.'); break;
     case 'antab': S.an.tab = d.v; renderView(); break;
     case 'def': openDef(t); break;
+    case 'tutorial': openTutorial(d.lang || (art(S.cur)?.dataset === '1' ? 'cn' : 'en')); break;
     case 'codebook': openCodebook(); break;
     case 'coder': openAccount(); break;
     case 'pickcoder': pickCoder(d.v, d.then === '1'); break;
@@ -2380,7 +2409,10 @@ async function boot() {
   if (demo) {
     S.cur = 'practice-en'; S.mpane = 'sheet';
     if (!draft(S.cur,false)) Object.assign(draft(S.cur).codes,{p1:1,p2:1,p3:1});
-    goLocal('Codebook 2.3 practice preview'); return;
+    goLocal('Codebook 2.3 practice preview');
+    const language = new URLSearchParams(location.search).get('tutorial');
+    if (['en','cn'].includes(language)) openTutorial(language);
+    return;
   }
   if (!CFG.supabaseUrl || !CFG.supabaseAnonKey || !window.supabase) return goLocal('No backend configured yet: work stays in this browser.');
   sb = window.supabase.createClient(CFG.supabaseUrl, CFG.supabaseAnonKey, {auth:{persistSession:true, autoRefreshToken:true, detectSessionInUrl:true, flowType:'implicit'}});

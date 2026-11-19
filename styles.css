@@ -460,3 +460,19 @@ img{max-width:100%}
   letter-spacing: normal;
   white-space: normal;
 }
+
+#tutorial-dialog{box-sizing:border-box;width:min(850px,96vw);height:min(820px,94dvh);padding:0;border:1px solid var(--line);border-radius:12px;background:var(--panel);color:var(--ink)}
+#tutorial-dialog[open]{display:flex;flex-direction:column}
+#tutorial-dialog::backdrop{background:#152a2480}
+#tutorial-dialog header{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+#tutorial-dialog nav{display:flex;gap:4px}
+#tutorial-dialog nav [aria-pressed="true"]{background:var(--accent);color:var(--on-accent)}
+#tutorial-close{margin-left:auto}
+.tutorial-content{overflow:auto;padding:16px clamp(14px,4vw,36px);line-height:1.6}
+.tutorial-page fieldset,.tutorial-page article,.tutorial-page section{min-width:0;margin:16px 0;border:1px solid var(--line);border-radius:8px;padding:14px}
+.tutorial-page legend,.tutorial-page h2{font-size:1.1rem;font-weight:650}
+.tutorial-page label{display:block;padding:4px 0}
+.tutorial-page textarea{box-sizing:border-box;width:100%;font:inherit}
+.tutorial-page button,.tutorial-page summary{cursor:pointer}
+.tutorial-page form button{margin-top:8px;padding:6px 12px}
+.tutorial-page [role="status"]:empty{display:none}
