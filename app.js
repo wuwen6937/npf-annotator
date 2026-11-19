@@ -4,32 +4,32 @@
 // codebook from the protected database after sign-in (definitions for the team, headings for exports).
 let bookChapters = [];
 const guidance = {
-  8:[1,'Answer all three screening questions after reading the whole article.'],
-  9:[1,'Look for a China-related energy transition story in which a named Chinese actor plays a part.'],
-  10:[1,'Look for a uniquely named entity whose action or experience matters to the story.'],
-  11:[1,'Look for a change of state or a connected chain of claims.'],
-  13:[3,'Mark the passage that supports each reference.'],
-  14:[3,'Count direct quotations and indirect attributions to Xi Jinping. His name alone is insufficient.'],
-  15:[3,'Look for a specific CCP document, institution, event or slogan. Distinguish Party references from state bodies.'],
-  16:[3,'Look for a Western or Western-led document, concept or regulation. A venue or organization alone is insufficient.'],
-  17:[3,'Choose Yes for a critical reference and No for a neutral or positive one.'],
-  18:[4,'Identify the static starting context of the first narrative.'],
-  19:[4,'Mark every explicit location that anchors the beginning. Exclude publication datelines.'],
-  20:[4,'Mark an explicit starting date or period. Relative dates that require outside context do not qualify.'],
-  22:[5,'Record uniquely named actors in order of appearance.'],
-  24:[5,'Check whether removing this actor would change a cause, action, harm, benefit or outcome.'],
-  25:[5,'Mark all actions performed by or directed at this character.'],
-  26:[5,'Classify the capacity in which the actor appears. Companies count as domain-level.'],
-  31:[5,'Assign the role shown by the action. Choose Unclear for ambiguous or changing roles.'],
-  37:[5,'Count valid characters in their order of appearance.'],
-  38:[5,'Count heroes, villains, victims and beneficiaries. Exclude unclear roles.'],
-  40:[6,'Follow the first narrative and trace its connected events or arguments.'],
-  42:[6,'Consider the ending. A resolved setback can be positive. Gains with an unresolved setback can be mixed.'],
-  44:[7,'Look for the overall prescription, lesson or value judgment.'],
-  45:[7,'Look for a recommended action, policy instrument, target or lesson.'],
-  46:[7,'Look for a takeaway that praises, criticizes or prescribes a principle or value. Both moral types may apply.'],
-  41:[8,'Mark each specific device, system or technological output presented as a transition solution. Exclude generic terms and raw fuels.'],
-  49:[9,'Include all starting settings, up to four coded characters, the plot and any morals. Review and edit the draft.']
+  8:[1,"Read the whole article and answer all three questions, even if topical relevance is No."],
+  9:[1,"Choose Yes when a Chinese actor plays a role in an energy transition story, such as a Chinese firm building a wind farm abroad."],
+  10:[1,"Look for a named actor whose actions or experiences affect the story. “Villager Wen Wutao lost his crops” qualifies."],
+  11:[1,"Look for linked events or claims that show change. “Drought lowered reservoir levels and cut power output” has a plot."],
+  13:[3,"Mark the words that support each reference, such as the name of a Party document."],
+  14:[3,"Choose Yes when the text quotes Xi Jinping or reports what he said, as in “Xi called for cleaner energy.” His name alone is insufficient."],
+  15:[3,"Mark a specific CCP document, institution, event or slogan, such as the Party Congress. A reference to the State Council alone does not qualify."],
+  16:[3,"Mark a Western or Western-led document, concept or regulation, such as the Paris Agreement. Mentioning the UN alone is insufficient."],
+  17:[3,"Choose Yes for criticism, as in “The EU rules overlook local needs.” Choose No for neutral or positive references."],
+  18:[4,"Mark the places and times that establish where and when the first narrative begins."],
+  19:[4,"Mark every place that establishes the starting location, as in “In rural Henan, households relied on coal.” Skip publication datelines."],
+  20:[4,"Mark a starting time the reader can identify from the text, such as “since 2020.” Skip “yesterday” when it requires the publication date."],
+  22:[5,"List named actors in the order they first appear, even if the main actor appears later."],
+  24:[5,"Choose Yes if the actor does or experiences something and removing them changes the story, as when State Grid restores power."],
+  25:[5,"Mark every action the character takes or experiences, such as “built the plant” or “received compensation.”"],
+  26:[5,"Code the role the actor speaks or acts in. A ministry is state-level, a company is domain-level, and a farmer acting privately is citizen-level."],
+  31:[5,"Code the role shown by the action, such as Victim for a farmer who loses crops. Choose Unclear if the role changes or is ambiguous."],
+  37:[5,"The tool selects Yes when five or more characters pass the validity check."],
+  38:[5,"The tool counts each valid character with a clear role. Two heroes and one unclear character give a count of two."],
+  40:[6,"Trace the linked events or claims in the first narrative. Stop when a separate narrative begins."],
+  42:[6,"Check how the story ends. Restored power can make the plot positive, while gains alongside unresolved outages can make it mixed."],
+  44:[7,"Look for a takeaway about what should be done or valued, such as “Rural households should receive priority.”"],
+  45:[7,"Choose Yes for a recommended measure or lesson, such as “Extend rooftop solar subsidies to rural counties.”"],
+  46:[7,"Choose Yes for a judgment about what is right or valuable, such as “Clean energy should serve ordinary people first.” Both moral types can apply."],
+  41:[8,"Mark specific technologies presented as solutions, as in “Batteries help the grid use more solar power.” Here, mark “Batteries.”"],
+  49:[9,"Include all starting settings, up to four characters, the plot and any morals. If there is no moral, say so."]
 };
 
 /* ================= constants ================= */
@@ -554,7 +554,7 @@ function renderReader() {
     <h1 lang="${a.dataset === '1' ? 'zh' : 'en'}">${esc(a.title || a.id)}</h1>
     ${lk ? `<div class="banner good"><span>✓ Submitted ${esc(fmtDate(c.submittedAt))}.${others && (isLead() || a.practice) ? ' ' + others + ' other coding' + (others > 1 ? 's' : '') + ' available.' : peerOpen ? ' Everyone has finished this article, so you can now compare.' : ' Thank you!' + (peerWait ? ' ' + peerWait : '')}</span><span style="margin-left:auto;display:flex;gap:8px">${nextKey() ? `<button class="btn sm pri" data-act="next">Next article →</button>` : ''}${(others && (isLead() || a.practice)) || peerOpen ? `<button class="btn sm${nextKey() ? '' : ' pri'}" data-act="gocmp" data-key="${esc(a.key)}">Compare</button>` : ''}${a.practice ? '' : '<button class="btn sm" data-act="view" data-v="inbox">My work</button>'}<button class="btn sm" data-act="reopen">Edit again</button></span></div>` : ''}
     ${preTop(c, lk)}
-    ${!S.hintOff && !lk && preDone(c) && !screenedOut(c) ? `<div class="hint"><span><b>${matchMedia('(pointer: coarse)').matches ? 'Press and hold a word, drag to cover the passage, then pick a category.' : 'Select words in the text to code them.'}</b> A menu opens with the codebook categories${matchMedia('(pointer: coarse)').matches ? '' : '; each has a shortcut key'}. Click a highlight to change or delete it. Most Yes/No answers on the right fill themselves from what you mark.</span><button data-act="hintoff" aria-label="Hide tip">✕</button></div>` : ''}
+    ${!S.hintOff && !lk && preDone(c) && !screenedOut(c) ? `<div class="hint"><span><b>${matchMedia('(pointer: coarse)').matches ? 'Press and hold a word, drag to cover the passage, then pick a category.' : 'Select a passage and choose its category.'}</b> Select a highlight to edit or remove it.</span><button data-act="hintoff" aria-label="Hide tip">✕</button></div>` : ''}
     <div class="rd-bar">
       ${S.mode === 'shared' && !a.practice ? (() => { const ts = threadsFor(a.key), op = ts.filter(t => t.status === 'open').length, un = ts.filter(isUnread).length; return `<button class="btn sm" data-act="discuss" title="Questions and discussion with the other coders of this article">Discuss${op ? ` <span class="badge soft">${op}</span>` : ''}${un ? ' <span class="badge">new</span>' : ''}</button>`; })() : ''}
       <span class="savest"></span>
@@ -664,7 +664,7 @@ function renderPanel() {
     const fs = F.filter(f => f.sec === sec);
     let inner = fs.filter(f => !f.fromChars).map(f => fieldHTML(c, f, lk)).join('');
     if (sec === 'Characters') {
-      inner = `<p style="margin:0 0 4px;font-size:12px;color:var(--faint)">Select a name in the text and press <b>C</b>; select what it does and press <b>A</b>. Check the suggested English name or Pinyin and edit it as needed. Use order of first appearance for Char 1–4 in the export.</p>`
+      inner = `<p style="margin:0 0 4px;font-size:12px;color:var(--faint)">In order of appearance, mark each name with <b>C</b> and its actions with <b>A</b>. Check the suggested English name or Pinyin.</p>`
         + c.chars.map((ch, i) => charHTML(c, ch, i, lk)).join('')
         + (lk ? '' : `<button class="btn sm" data-act="chadd">+ Add character without text mark</button>`)
         + fs.map(f => fieldHTML(c, f, lk)).join('');
